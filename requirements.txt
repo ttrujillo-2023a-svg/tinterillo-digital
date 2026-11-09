@@ -1,1 +1,2 @@
-streamlit
+streamlit>=1.32
+python-docx>=1.1
