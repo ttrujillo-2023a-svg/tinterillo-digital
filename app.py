@@ -15,7 +15,7 @@ DISEÑO HÍBRIDO (importante para la precisión legal):
 Flujo: menu -> submenu -> relato -> capsula (asesoría dinámica) -> formulario -> documento
 
 Ejecutar en local:  streamlit run app.py
-Secretos:           st.secrets["OPENAI_API_KEY"]  (o, alternativamente, "ANTHROPIC_API_KEY")
+Secretos:           st.secrets["GEMINI_API_KEY"]  (opcional: "GEMINI_MODEL", "DEBUG_IA")
 """
 
 import json
@@ -36,8 +36,9 @@ MESES = [
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
 
-MODELO_OPENAI_POR_DEFECTO = "gpt-4o-mini"
-MODELO_ANTHROPIC_POR_DEFECTO = "claude-haiku-5-5"
+# Modelo estable vigente según la página oficial de deprecaciones de Google (gemini-1.5-* y 2.0-* ya fueron apagados).
+# Se puede cambiar sin tocar el código con el secreto GEMINI_MODEL.
+MODELO_GEMINI_POR_DEFECTO = "gemini-3.8-flash"
 MAX_CARACTERES_RELATO = 4000      # límite de texto enviado a la IA (control de costo y abuso)
 MAX_LLAMADAS_IA_SESION = 10       # tope de llamadas a la IA por sesión de usuario
 
@@ -722,6 +723,7 @@ def iniciar_estado():
         "estado_redaccion": "",
         "para_quien": "yo",   # yo | otra
         "llamadas_ia": 0,
+        "ultimo_error_ia": "",
     }
     for clave, valor in defaults.items():
         if clave not in st.session_state:
@@ -759,7 +761,7 @@ def indicador_progreso():
 
 
 # =============================================================================
-# 5. CAPA DE IA (OpenAI o Anthropic) Y UTILIDADES
+# 5. CAPA DE IA (Google Gemini) Y UTILIDADES
 # =============================================================================
 def obtener_secret(nombre, default=None):
     """Lee un secreto de forma segura; si no existe secrets.toml o la clave, devuelve default."""
@@ -769,51 +771,46 @@ def obtener_secret(nombre, default=None):
         return default
 
 
+def ia_configurada():
+    """True si la clave de Gemini está en los Secrets de Streamlit."""
+    return bool(obtener_secret("GEMINI_API_KEY"))
+
+
 def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
     """
-    Llama al modelo configurado. Devuelve (texto, estado).
-    Estados: "ok" | "sin_clave" | "limite" | "error". Nunca lanza excepciones.
-    Usa OpenAI si hay OPENAI_API_KEY; si no, Anthropic si hay ANTHROPIC_API_KEY.
+    Llama a Gemini (librería oficial `google-genai`). Devuelve (texto, estado).
+    Estados: "ok" | "sin_clave" | "limite" | "error". Nunca lanza excepciones: si algo falla,
+    la app continúa con el triaje por reglas y el texto original del usuario.
     """
     if st.session_state["llamadas_ia"] >= MAX_LLAMADAS_IA_SESION:
         return None, "limite"
 
-    openai_key = obtener_secret("OPENAI_API_KEY")
-    anthropic_key = obtener_secret("ANTHROPIC_API_KEY")
-    if not openai_key and not anthropic_key:
+    api_key = obtener_secret("GEMINI_API_KEY")
+    if not api_key:
         return None, "sin_clave"
 
     try:
         st.session_state["llamadas_ia"] += 1
-        if openai_key:
-            from openai import OpenAI  # import dentro del try: si falta la librería, la app no se rompe
+        # Import dentro del try: si la librería no está instalada, la app no se rompe
+        from google import genai
+        from google.genai import types
 
-            cliente = OpenAI(api_key=openai_key, timeout=30.0, max_retries=1)
-            r = cliente.chat.completions.create(
-                model=obtener_secret("OPENAI_MODEL", MODELO_OPENAI_POR_DEFECTO),
-                temperature=0.1,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            return (r.choices[0].message.content or ""), "ok"
-
-        import anthropic
-
-        cliente = anthropic.Anthropic(api_key=anthropic_key, timeout=30.0, max_retries=1)
-        r = cliente.messages.create(
-            model=obtener_secret("ANTHROPIC_MODEL", MODELO_ANTHROPIC_POR_DEFECTO),
-            max_tokens=max_tokens,
-            temperature=0.1,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+        cliente = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30000))  # 30 s
+        respuesta = cliente.models.generate_content(
+            model=obtener_secret("GEMINI_MODEL", MODELO_GEMINI_POR_DEFECTO),
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                # Los modelos Gemini 3 recomiendan dejar la temperatura en su valor por defecto.
+                # Margen amplio de tokens: los modelos con "thinking" gastan parte del cupo pensando.
+                max_output_tokens=max(max_tokens, 4096),
+                response_mime_type="application/json",  # fuerza salida JSON
+            ),
         )
-        return "".join(b.text for b in r.content if getattr(b, "type", "") == "text"), "ok"
-    except Exception:
-        # No se muestra el detalle del error para no exponer información sensible
+        return (respuesta.text or ""), "ok"
+    except Exception as e:
+        # El detalle solo se guarda si el desarrollador activa DEBUG_IA en los Secrets
+        st.session_state["ultimo_error_ia"] = f"{type(e).__name__}: {str(e)[:300]}"
         return None, "error"
 
 
@@ -1548,6 +1545,12 @@ def main():
     with st.sidebar:
         st.markdown("### ⚖️ Tinterillo Digital")
         st.caption(AVISO_LEGAL)
+        if ia_configurada():
+            st.success("🤖 IA (Gemini) activa", icon=None)
+        else:
+            st.warning("⚙️ IA no configurada: la app funciona en modo reglas.")
+        if obtener_secret("DEBUG_IA", False) and st.session_state.get("ultimo_error_ia"):
+            st.error("Último error de IA (solo visible en modo DEBUG_IA):\n\n" + st.session_state["ultimo_error_ia"])
         st.button("🔄 Empezar de nuevo", key="reiniciar_sidebar", use_container_width=True, on_click=reiniciar)
 
     indicador_progreso()
@@ -1561,4 +1564,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
