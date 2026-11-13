@@ -20,6 +20,7 @@ Secretos:           st.secrets["GEMINI_API_KEY"]  (opcional: "GEMINI_MODEL", "DE
 
 import json
 import re
+import time
 import unicodedata
 from datetime import date
 
@@ -39,6 +40,21 @@ MESES = [
 # Modelo estable vigente según la página oficial de deprecaciones de Google (gemini-1.5-* y 2.0-* ya fueron apagados).
 # Se puede cambiar sin tocar el código con el secreto GEMINI_MODEL.
 MODELO_GEMINI_POR_DEFECTO = "gemini-3.8-flash"
+# Si el modelo principal responde "no encontrado", se prueban estos en orden (alias o versiones anteriores vigentes)
+MODELOS_GEMINI_RESPALDO = ["gemini-3.6-flash", "gemini-flash-latest"]
+
+# Causas de fallo de la IA, explicadas en lenguaje claro (se muestran al usuario y al desarrollador)
+CAUSAS_IA = {
+    "libreria_no_instalada": "la librería google-genai no está instalada: revisa el requirements.txt del repositorio",
+    "clave_invalida": "la clave GEMINI_API_KEY no es válida o expiró",
+    "permiso_denegado": "la clave no tiene permiso para usar este modelo o región",
+    "modelo_no_encontrado": "el modelo de Gemini configurado no está disponible",
+    "cuota_agotada": "se agotó la cuota o el límite gratuito de la clave",
+    "tiempo_agotado": "Gemini tardó demasiado en responder",
+    "servicio_saturado": "el servicio de Gemini está saturado en este momento",
+    "respuesta_invalida": "Gemini respondió, pero en un formato que la app no pudo leer",
+    "otro": "error desconocido al llamar a Gemini",
+}
 MAX_CARACTERES_RELATO = 4000      # límite de texto enviado a la IA (control de costo y abuso)
 MAX_LLAMADAS_IA_SESION = 10       # tope de llamadas a la IA por sesión de usuario
 
@@ -724,6 +740,9 @@ def iniciar_estado():
         "para_quien": "yo",   # yo | otra
         "llamadas_ia": 0,
         "ultimo_error_ia": "",
+        "causa_ia": "",
+        "causa_redaccion": "",
+        "modelo_usado": "",
     }
     for clave, valor in defaults.items():
         if clave not in st.session_state:
@@ -776,12 +795,41 @@ def ia_configurada():
     return bool(obtener_secret("GEMINI_API_KEY"))
 
 
+def clasificar_error(e):
+    """Traduce una excepción de la librería de Gemini a una causa legible (clave de CAUSAS_IA)."""
+    if isinstance(e, ImportError):
+        return "libreria_no_instalada"
+    msg = f"{type(e).__name__} {e}".lower()
+    if "api key not valid" in msg or "api_key_invalid" in msg or "api key expired" in msg:
+        return "clave_invalida"
+    if "permission_denied" in msg or "403" in msg or "location is not supported" in msg:
+        return "permiso_denegado"
+    if "not_found" in msg or "404" in msg or "no longer available" in msg or "is not found" in msg:
+        return "modelo_no_encontrado"
+    if "resource_exhausted" in msg or "429" in msg or "quota" in msg:
+        return "cuota_agotada"
+    if "timeout" in msg or "timed out" in msg or "deadline" in msg:
+        return "tiempo_agotado"
+    if "unavailable" in msg or "503" in msg or "overloaded" in msg:
+        return "servicio_saturado"
+    return "otro"
+
+
+def registrar_fallo_ia(causa, detalle):
+    """Guarda la causa (visible al usuario) y el detalle técnico (solo visible con DEBUG_IA)."""
+    st.session_state["causa_ia"] = causa
+    st.session_state["ultimo_error_ia"] = detalle[:400]
+
+
 def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
     """
     Llama a Gemini (librería oficial `google-genai`). Devuelve (texto, estado).
     Estados: "ok" | "sin_clave" | "limite" | "error". Nunca lanza excepciones: si algo falla,
     la app continúa con el triaje por reglas y el texto original del usuario.
+    - Si el modelo principal no existe (404), prueba los modelos de respaldo.
+    - Si el servicio está saturado (503), reintenta una vez.
     """
+    st.session_state["causa_ia"] = ""
     if st.session_state["llamadas_ia"] >= MAX_LLAMADAS_IA_SESION:
         return None, "limite"
 
@@ -789,29 +837,56 @@ def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
     if not api_key:
         return None, "sin_clave"
 
+    principal = str(obtener_secret("GEMINI_MODEL", MODELO_GEMINI_POR_DEFECTO)).strip()
+    candidatos = []
+    for m in [principal] + MODELOS_GEMINI_RESPALDO:
+        if m and m not in candidatos:
+            candidatos.append(m)
+
+    st.session_state["llamadas_ia"] += 1
     try:
-        st.session_state["llamadas_ia"] += 1
         # Import dentro del try: si la librería no está instalada, la app no se rompe
         from google import genai
         from google.genai import types
 
         cliente = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30000))  # 30 s
-        respuesta = cliente.models.generate_content(
-            model=obtener_secret("GEMINI_MODEL", MODELO_GEMINI_POR_DEFECTO),
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                # Los modelos Gemini 3 recomiendan dejar la temperatura en su valor por defecto.
-                # Margen amplio de tokens: los modelos con "thinking" gastan parte del cupo pensando.
-                max_output_tokens=max(max_tokens, 4096),
-                response_mime_type="application/json",  # fuerza salida JSON
-            ),
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            # Los modelos Gemini 3 recomiendan dejar la temperatura en su valor por defecto.
+            # Margen amplio de tokens: los modelos con "thinking" gastan parte del cupo pensando.
+            max_output_tokens=max(max_tokens, 4096),
+            response_mime_type="application/json",  # fuerza salida JSON
         )
-        return (respuesta.text or ""), "ok"
     except Exception as e:
-        # El detalle solo se guarda si el desarrollador activa DEBUG_IA en los Secrets
-        st.session_state["ultimo_error_ia"] = f"{type(e).__name__}: {str(e)[:300]}"
+        registrar_fallo_ia(clasificar_error(e), f"{type(e).__name__}: {e}")
         return None, "error"
+
+    causa = "otro"
+    for modelo in candidatos:
+        for intento in range(2):
+            try:
+                respuesta = cliente.models.generate_content(model=modelo, contents=user_prompt, config=config)
+                st.session_state["modelo_usado"] = modelo
+                return (respuesta.text or ""), "ok"
+            except Exception as e:
+                causa = clasificar_error(e)
+                registrar_fallo_ia(causa, f"[{modelo}] {type(e).__name__}: {e}")
+                if causa == "servicio_saturado" and intento == 0:
+                    time.sleep(2)
+                    continue
+                break
+        if causa != "modelo_no_encontrado":
+            break  # solo se prueba otro modelo cuando el problema es que el modelo no existe
+    return None, "error"
+
+
+def a_bool(valor):
+    """Convierte true/false que la IA devuelva como booleano o como texto ("false" no debe ser True)."""
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, str):
+        return valor.strip().lower() in ("true", "si", "sí", "1", "yes")
+    return bool(valor)
 
 
 def extraer_json(texto):
@@ -903,12 +978,12 @@ def validar_analisis(data, caso_id, reglas):
     caso = CASOS[caso_id]
 
     nivel = str(data.get("nivel_urgencia", "")).strip().upper().replace("Í", "I")
-    mecanismo = data.get("mecanismo")
+    mecanismo = str(data.get("mecanismo", "")).strip().upper().replace(" ", "_")
     if nivel not in NIVELES or mecanismo not in caso["permitidos"]:
         return None
 
     # Red de seguridad: se toma el MÁS GRAVE entre la IA y las reglas
-    riesgo = bool(data.get("riesgo_vital")) or reglas["riesgo_vital"]
+    riesgo = a_bool(data.get("riesgo_vital")) or reglas["riesgo_vital"]
     nivel = nivel_max(nivel, reglas["nivel"])
     if riesgo:
         nivel = "CRITICA"
@@ -951,9 +1026,14 @@ def analizar_caso(caso_id, relato, usar_ia):
         "Responde solo con el objeto JSON solicitado."
     )
     texto, estado = llamar_ia(SYSTEM_PROMPT_ANALISIS, prompt, max_tokens=900)
+    causa = st.session_state.get("causa_ia", "")
     analisis = validar_analisis(extraer_json(texto), caso_id, reglas)
     if analisis is None:
+        if estado == "ok":
+            causa = "respuesta_invalida"
+            registrar_fallo_ia(causa, "Respuesta no válida de Gemini: " + (texto or "")[:300])
         reglas["estado"] = estado if estado != "ok" else "error"
+        reglas["causa"] = causa
         return reglas
     return analisis
 
@@ -976,13 +1056,21 @@ def pretensiones_por_defecto(mec_id, caso_id, datos):
 
 
 def validar_redaccion(data):
-    """Devuelve (hechos, pretensiones) validados, o (None, []) si la respuesta no sirve."""
+    """Devuelve (hechos, pretensiones) validados, o (None, []) si la respuesta no sirve. Tolera formatos variantes."""
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        data = data[0]
     if not isinstance(data, dict):
         return None, []
-    hechos = str(data.get("hechos", "")).strip()
+    hechos = data.get("hechos", "")
+    if isinstance(hechos, list):
+        hechos = "\n\n".join(str(x).strip() for x in hechos if str(x).strip())
+    hechos = str(hechos).strip()
     if len(hechos) < 30 or len(hechos) > MAX_CARACTERES_RELATO * 3:
         return None, []
-    pret = [str(p).strip() for p in (data.get("pretensiones") or []) if isinstance(p, (str, int, float))]
+    crudas = data.get("pretensiones") or []
+    if isinstance(crudas, str):
+        crudas = [crudas]
+    pret = [str(p).strip() for p in crudas if isinstance(p, (str, int, float))]
     pret = [p for p in pret if 10 <= len(p) <= 600][:6]
     return hechos, pret
 
@@ -1009,8 +1097,12 @@ def redactar_documento(mec_id, caso_id, datos):
         "Responde solo con el objeto JSON solicitado."
     )
     texto, estado = llamar_ia(SYSTEM_PROMPT_REDACCION, prompt, max_tokens=1800)
+    st.session_state["causa_redaccion"] = st.session_state.get("causa_ia", "")
     hechos, pret = validar_redaccion(extraer_json(texto))
     if hechos is None:
+        if estado == "ok":
+            st.session_state["causa_redaccion"] = "respuesta_invalida"
+            registrar_fallo_ia("respuesta_invalida", "Respuesta no válida de Gemini: " + (texto or "")[:300])
         return relato, por_defecto, (estado if estado != "ok" else "error")
     return hechos, (pret or por_defecto), "ia"
 
@@ -1348,9 +1440,9 @@ def vista_capsula():
     else:
         motivos = {
             "omitida": "elegiste no usar IA",
-            "sin_clave": "la IA no está configurada",
+            "sin_clave": "la IA no está configurada: falta el secreto GEMINI_API_KEY",
             "limite": "se alcanzó el límite de usos de IA en esta sesión",
-            "error": "la IA no estuvo disponible",
+            "error": CAUSAS_IA.get(analisis.get("causa"), "la IA no estuvo disponible"),
         }
         st.caption(
             f"⚙️ Análisis automático por reglas ({motivos.get(analisis['estado'], 'la IA no estuvo disponible')}). "
@@ -1505,8 +1597,11 @@ def vista_documento():
         st.info("Usaste tu relato original (sin IA) y las pretensiones estándar del catálogo. Puedes editarlo aquí mismo.")
     elif estado == "limite":
         st.warning("Se alcanzó el límite de usos de IA en esta sesión. Se usó tu relato original y las pretensiones estándar.")
+    elif estado == "sin_clave":
+        st.warning("La IA no está configurada (falta el secreto GEMINI_API_KEY). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
     else:
-        st.warning("No fue posible usar la IA en este momento. Se usó tu relato original y las pretensiones estándar: revisa y edita.")
+        causa = CAUSAS_IA.get(st.session_state.get("causa_redaccion"), "causa desconocida")
+        st.warning(f"No fue posible usar la IA en este momento ({causa}). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
 
     texto = st.text_area("Borrador del documento (editable)", key="borrador", height=560)
 
@@ -1549,8 +1644,17 @@ def main():
             st.success("🤖 IA (Gemini) activa", icon=None)
         else:
             st.warning("⚙️ IA no configurada: la app funciona en modo reglas.")
-        if obtener_secret("DEBUG_IA", False) and st.session_state.get("ultimo_error_ia"):
-            st.error("Último error de IA (solo visible en modo DEBUG_IA):\n\n" + st.session_state["ultimo_error_ia"])
+        if obtener_secret("DEBUG_IA", False):
+            # Panel de diagnóstico: solo aparece si agregas DEBUG_IA = true en los Secrets
+            st.markdown("**🔧 Diagnóstico de IA**")
+            if st.button("Probar conexión con Gemini", key="probar_ia", use_container_width=True):
+                texto_prueba, est = llamar_ia("Responde únicamente con un objeto JSON.", 'Devuelve exactamente: {"ok": true}')
+                if est == "ok":
+                    st.success(f"Conexión OK con el modelo {st.session_state['modelo_usado']}.")
+                else:
+                    st.error(f"Falló ({est}): " + CAUSAS_IA.get(st.session_state.get("causa_ia"), "sin detalle"))
+            if st.session_state.get("ultimo_error_ia"):
+                st.code(st.session_state["ultimo_error_ia"], language=None)
         st.button("🔄 Empezar de nuevo", key="reiniciar_sidebar", use_container_width=True, on_click=reiniciar)
 
     indicador_progreso()
