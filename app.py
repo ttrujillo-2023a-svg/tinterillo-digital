@@ -41,7 +41,9 @@ MESES = [
 # Se puede cambiar sin tocar el código con el secreto GEMINI_MODEL.
 MODELO_GEMINI_POR_DEFECTO = "gemini-3.8-flash"
 # Si el modelo principal responde "no encontrado", se prueban estos en orden (alias o versiones anteriores vigentes)
-MODELOS_GEMINI_RESPALDO = ["gemini-3.6-flash", "gemini-flash-latest"]
+MODELOS_GEMINI_RESPALDO = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]
+# Fallos en los que SÍ conviene probar otro modelo (en los demás, como clave inválida, otro modelo no ayuda)
+CAUSAS_CAMBIAR_MODELO = ("modelo_no_encontrado", "servicio_saturado", "cuota_agotada")
 
 # Causas de fallo de la IA, explicadas en lenguaje claro (se muestran al usuario y al desarrollador)
 CAUSAS_IA = {
@@ -826,8 +828,9 @@ def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
     Llama a Gemini (librería oficial `google-genai`). Devuelve (texto, estado).
     Estados: "ok" | "sin_clave" | "limite" | "error". Nunca lanza excepciones: si algo falla,
     la app continúa con el triaje por reglas y el texto original del usuario.
-    - Si el modelo principal no existe (404), prueba los modelos de respaldo.
-    - Si el servicio está saturado (503), reintenta una vez.
+    - Si un modelo está saturado (503), agotó su cuota (429) o no existe (404), prueba el siguiente.
+    - Recuerda el último modelo que funcionó en la sesión y lo usa primero.
+    - Si todos están saturados, espera unos segundos y hace una segunda ronda.
     """
     st.session_state["causa_ia"] = ""
     if st.session_state["llamadas_ia"] >= MAX_LLAMADAS_IA_SESION:
@@ -837,9 +840,10 @@ def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
     if not api_key:
         return None, "sin_clave"
 
-    principal = str(obtener_secret("GEMINI_MODEL", MODELO_GEMINI_POR_DEFECTO)).strip()
+    # Orden: último modelo que funcionó -> modelo configurado -> modelos de respaldo
     candidatos = []
-    for m in [principal] + MODELOS_GEMINI_RESPALDO:
+    principal = str(obtener_secret("GEMINI_MODEL", MODELO_GEMINI_POR_DEFECTO)).strip()
+    for m in [st.session_state.get("modelo_usado"), principal] + MODELOS_GEMINI_RESPALDO:
         if m and m not in candidatos:
             candidatos.append(m)
 
@@ -861,9 +865,12 @@ def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
         registrar_fallo_ia(clasificar_error(e), f"{type(e).__name__}: {e}")
         return None, "error"
 
+    inicio = time.monotonic()
     causa = "otro"
-    for modelo in candidatos:
-        for intento in range(2):
+    for ronda in range(2):
+        for modelo in candidatos:
+            if time.monotonic() - inicio > 45:  # tope total para que el usuario no espere de más
+                break
             try:
                 respuesta = cliente.models.generate_content(model=modelo, contents=user_prompt, config=config)
                 st.session_state["modelo_usado"] = modelo
@@ -871,12 +878,13 @@ def llamar_ia(system_prompt, user_prompt, max_tokens=1200):
             except Exception as e:
                 causa = clasificar_error(e)
                 registrar_fallo_ia(causa, f"[{modelo}] {type(e).__name__}: {e}")
-                if causa == "servicio_saturado" and intento == 0:
-                    time.sleep(2)
-                    continue
-                break
-        if causa != "modelo_no_encontrado":
-            break  # solo se prueba otro modelo cuando el problema es que el modelo no existe
+                if causa in CAUSAS_CAMBIAR_MODELO:
+                    continue  # prueba el siguiente modelo
+                return None, "error"  # clave inválida, permisos, etc.: cambiar de modelo no ayuda
+        if causa != "servicio_saturado":
+            break
+        if ronda == 0:
+            time.sleep(3)  # todos saturados: pausa breve y segunda ronda
     return None, "error"
 
 
@@ -1300,6 +1308,22 @@ C.C. No. {cedula}
 """
 
 
+def reintentar_analisis():
+    """Callback: vuelve a analizar el relato con IA sin pedirle nada al usuario."""
+    analisis = analizar_caso(st.session_state["caso"], st.session_state["relato"].strip(), True)
+    st.session_state["analisis"] = analisis
+    st.session_state["mecanismo"] = analisis["mecanismo"]
+
+
+def reintentar_redaccion():
+    """Callback: vuelve a redactar hechos y pretensiones con IA y regenera el borrador."""
+    caso_id, mec_id = st.session_state["caso"], st.session_state["mecanismo"]
+    datos = dict(st.session_state["datos"], usar_ia=True)
+    hechos_f, pret_f, estado = redactar_documento(mec_id, caso_id, datos)
+    st.session_state["estado_redaccion"] = estado
+    st.session_state["borrador"] = generar_borrador(mec_id, caso_id, datos, hechos_f, pret_f, st.session_state["analisis"])
+
+
 def lista_chequeo(mec_id, caso_id):
     caso = CASOS[caso_id]
     mec = MECANISMOS[mec_id]
@@ -1448,6 +1472,8 @@ def vista_capsula():
             f"⚙️ Análisis automático por reglas ({motivos.get(analisis['estado'], 'la IA no estuvo disponible')}). "
             "Es una orientación general: ante la duda, consulta a un abogado o a la Personería."
         )
+        if analisis["estado"] == "error":
+            st.button("🔁 Reintentar el análisis con IA", key="reintentar_analisis", on_click=reintentar_analisis)
 
     otros = [m for m in caso["permitidos"] if m != mec_id]
     if otros:
@@ -1602,6 +1628,7 @@ def vista_documento():
     else:
         causa = CAUSAS_IA.get(st.session_state.get("causa_redaccion"), "causa desconocida")
         st.warning(f"No fue posible usar la IA en este momento ({causa}). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
+        st.button("🔁 Reintentar con IA (reemplaza el texto actual)", key="reintentar_redaccion", on_click=reintentar_redaccion)
 
     texto = st.text_area("Borrador del documento (editable)", key="borrador", height=560)
 
