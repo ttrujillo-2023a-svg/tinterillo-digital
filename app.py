@@ -733,14 +733,14 @@ def iniciar_estado():
         "paso": "menu",       # menu | submenu | relato | capsula | formulario | documento
         "categoria": None,
         "caso": None,
-        "relato": "",         # relato del ciudadano (editable en el formulario)
-        "usar_ia": True,      # consentimiento para usar IA
+        "relato": "",         # relato validado del ciudadano (lo usa el análisis y el documento)
+        "almacen": {},        # último valor guardado de cada campo de texto (sobrevive al cambiar de paso)
+        "gen": 0,             # "generación" de claves de widgets: cambia en cada paso o reinicio
         "analisis": None,     # resultado del análisis de gravedad
         "mecanismo": None,    # mecanismo elegido (por defecto, el recomendado)
         "datos": {},          # datos del formulario
         "borrador": "",       # documento generado (editable)
         "estado_redaccion": "",
-        "para_quien": "yo",   # yo | otra
         "llamadas_ia": 0,
         "ultimo_error_ia": "",
         "causa_ia": "",
@@ -752,10 +752,74 @@ def iniciar_estado():
             st.session_state[clave] = valor
 
 
+# -----------------------------------------------------------------------------
+# GESTIÓN DE CAMPOS DE TEXTO (evita que Streamlit "reviva" textos viejos)
+#
+# El bug que se corrigió: un widget SIN key y con value=<algo de session_state> cambia de
+# identidad cada vez que ese valor cambia, y Streamlit lo reinicia con el texto anterior.
+# Solución: cada campo usa una key estable (sin value=), se "siembra" desde un almacén
+# propio solo si aún no existe, y las keys llevan un número de generación que cambia en cada
+# paso o reinicio, así nunca quedan claves viejas atrapadas.
+# -----------------------------------------------------------------------------
+CAMPOS_INPUT = [
+    "relato", "usar_ia", "nombre", "cedula", "direccion", "ciudad", "entidad", "hechos_form",
+    "afectado_nombre", "afectado_cedula", "parentesco", "motivo_agencia", "juramento", "para_quien",
+]
+
+
+def clave_input(campo):
+    """Key del widget para el campo dado, en la generación actual."""
+    return f"in_{campo}_{st.session_state['gen']}"
+
+
+def sembrar(campo, default=""):
+    """
+    Devuelve la key del widget. Si esa key aún no tiene valor, lo carga desde el almacén
+    (o usa el valor por defecto). NUNCA pisa lo que el usuario ya escribió en esta generación.
+    """
+    clave = clave_input(campo)
+    if clave not in st.session_state:
+        st.session_state[clave] = st.session_state["almacen"].get(campo, default)
+    return clave
+
+
+def guardar_inputs():
+    """Copia los valores actuales de los widgets al almacén (para no perderlos al cambiar de paso)."""
+    for campo in CAMPOS_INPUT:
+        clave = clave_input(campo)
+        if clave in st.session_state:
+            st.session_state["almacen"][campo] = st.session_state[clave]
+
+
+def nueva_generacion():
+    st.session_state["gen"] += 1
+
+
+def limpiar_claves_widgets():
+    """Borra todas las claves de widgets de texto, casillas y lista de chequeo."""
+    for clave in list(st.session_state.keys()):
+        if clave.startswith(("in_", "chk_")):
+            del st.session_state[clave]
+
+
 def ir_a(paso, **kwargs):
+    """Callback de navegación: guarda lo escrito, cambia de generación y de paso."""
+    guardar_inputs()
+    nueva_generacion()
     st.session_state["paso"] = paso
     for clave, valor in kwargs.items():
         st.session_state[clave] = valor
+
+
+def nuevo_caso(caso_id):
+    """Callback al elegir una situación: empieza desde cero (sin textos de un caso anterior)."""
+    st.session_state["almacen"] = {}
+    limpiar_claves_widgets()
+    nueva_generacion()
+    st.session_state.update(
+        paso="relato", caso=caso_id, relato="", analisis=None, mecanismo=None,
+        datos={}, borrador="", estado_redaccion="",
+    )
 
 
 def elegir_mecanismo(mec_id):
@@ -763,12 +827,18 @@ def elegir_mecanismo(mec_id):
 
 
 def reiniciar():
-    """Vuelve al menú y borra los datos personales de la sesión (el contador de IA se conserva)."""
-    for clave, valor in {
-        "paso": "menu", "categoria": None, "caso": None, "relato": "", "analisis": None,
-        "mecanismo": None, "datos": {}, "borrador": "", "estado_redaccion": "", "para_quien": "yo",
-    }.items():
-        st.session_state[clave] = valor
+    """
+    Vuelve al menú y borra TODO lo escrito: relato, datos personales, borrador, claves de widgets y almacén.
+    Solo se conservan el contador de usos de IA y el último modelo que funcionó (para no evadir el límite
+    ni repetir intentos fallidos).
+    """
+    limpiar_claves_widgets()
+    nueva_generacion()
+    st.session_state.update(
+        paso="menu", categoria=None, caso=None, relato="", analisis=None, mecanismo=None,
+        datos={}, almacen={}, borrador="", estado_redaccion="", causa_redaccion="",
+        causa_ia="", ultimo_error_ia="",
+    )
 
 
 def fecha_formal():
@@ -1431,7 +1501,7 @@ def vista_submenu():
     for caso_id in cat["subs"]:
         st.button(
             CASOS[caso_id]["titulo"], key=f"btn_sub_{caso_id}", use_container_width=True,
-            on_click=ir_a, kwargs={"paso": "relato", "caso": caso_id, "analisis": None, "mecanismo": None},
+            on_click=nuevo_caso, args=(caso_id,),
         )
     st.divider()
     st.button("⬅️ Volver al menú principal", key="volver_menu", on_click=ir_a, kwargs={"paso": "menu"})
@@ -1445,23 +1515,25 @@ def vista_relato():
     st.caption(f"Caso: {caso['titulo']}")
     st.markdown(caso["hint"])
 
+    # Los campos usan key estable (sembrada desde el almacén) y NO usan value=: así Streamlit nunca
+    # los reinicia con un texto viejo y lo que el usuario escribe es exactamente lo que se lee al enviar.
     with st.form("form_relato"):
         relato = st.text_area(
             "Describe los hechos con tus propias palabras *",
-            value=st.session_state["relato"], height=220, placeholder=f"Ej: {caso['ejemplo']}",
+            key=sembrar("relato", ""), height=220, placeholder=f"Ej: {caso['ejemplo']}",
             help="Escribe como hablas; no importa la ortografía.",
         )
         st.caption("🔒 No escribas aquí tu cédula, teléfono ni dirección: esos datos se piden después.")
         usar_ia = st.checkbox(
             "Autorizo analizar mi relato con inteligencia artificial para evaluar la urgencia y recomendar el mecanismo",
-            value=st.session_state["usar_ia"],
+            key=sembrar("usar_ia", True),
             help="Solo se envía el texto del relato a un servicio de IA externo. Sin esta autorización, se usa un análisis automático por reglas.",
         )
         enviado = st.form_submit_button("Analizar mi caso", type="primary", use_container_width=True)
 
     if enviado:
+        guardar_inputs()  # lo escrito se conserva tal cual, aunque la validación falle
         st.session_state["relato"] = relato
-        st.session_state["usar_ia"] = usar_ia
         if len(relato.strip()) < 30:
             st.error("Cuéntanos un poco más (mínimo 2 o 3 frases) para poder analizar tu caso.")
         elif not relato_parece_valido(relato):
@@ -1470,11 +1542,13 @@ def vista_relato():
             with st.spinner("Analizando la gravedad de tu caso..."):
                 analisis = analizar_caso(caso_id, relato.strip(), usar_ia)
             if not analisis.get("relato_valido", True):
-                st.warning("🤔 " + analisis["justificacion"])  # la IA explica qué corregir; no se avanza
+                st.warning("🤔 " + analisis["justificacion"])  # la IA explica qué corregir; el texto se queda como está
             else:
                 st.session_state["analisis"] = analisis
                 st.session_state["mecanismo"] = analisis["mecanismo"]
+                st.session_state["almacen"].pop("hechos_form", None)  # el formulario se rellenará con este relato
                 st.session_state["paso"] = "capsula"
+                nueva_generacion()
                 st.rerun()
 
     st.button("⬅️ Volver", key="volver_submenu", on_click=ir_a, kwargs={"paso": "submenu"})
@@ -1563,70 +1637,72 @@ def vista_formulario():
     caso = CASOS[caso_id]
     mec_id = st.session_state["mecanismo"]
     es_tutela = mec_id == "TUTELA"
-    previos = st.session_state["datos"]
 
     st.header("📝 Tus datos")
     st.caption(f"Caso: {caso['titulo']}  |  Mecanismo: {MECANISMOS[mec_id]['nombre']}")
 
     # Esta pregunta va FUERA del formulario para que los campos de abajo cambien al instante
+    clave_pq = sembrar("para_quien", "yo")
     st.radio(
-        "¿Para quién es este trámite?", options=["yo", "otra"], key="para_quien", horizontal=True,
+        "¿Para quién es este trámite?", options=["yo", "otra"], key=clave_pq, horizontal=True,
         format_func=lambda v: {"yo": "Para mí", "otra": "Para otra persona (familiar o alguien a quien ayudo)"}[v],
     )
-    para_otro = st.session_state["para_quien"] == "otra"
+    para_otro = st.session_state[clave_pq] == "otra"
 
+    # Todos los campos: key estable sembrada desde el almacén, SIN value= (ver explicación en CAMPOS_INPUT)
     with st.form("formulario_datos"):
         st.markdown("**Tus datos (quien firma y presenta)**")
-        nombre = st.text_input("Nombre completo *", value=previos.get("nombre", ""))
-        cedula = st.text_input("Número de cédula *", value=previos.get("cedula", ""), help="Solo números.")
-        direccion = st.text_input("Dirección o correo electrónico de notificación *", value=previos.get("direccion", ""))
-        ciudad = st.text_input("Ciudad o municipio *", value=previos.get("ciudad", ""), placeholder="Ej: Medellín")
+        nombre = st.text_input("Nombre completo *", key=sembrar("nombre"))
+        cedula = st.text_input("Número de cédula *", key=sembrar("cedula"), help="Solo números.")
+        direccion = st.text_input("Dirección o correo electrónico de notificación *", key=sembrar("direccion"))
+        ciudad = st.text_input("Ciudad o municipio *", key=sembrar("ciudad"), placeholder="Ej: Medellín")
 
         afectado_nombre = afectado_cedula = parentesco = motivo_agencia = ""
         if para_otro:
             st.markdown("**Datos de la persona afectada**")
-            afectado_nombre = st.text_input("Nombre completo de la persona afectada *", value=previos.get("afectado_nombre", ""))
-            afectado_cedula = st.text_input("Cédula de la persona afectada (si la tienes)", value=previos.get("afectado_cedula", ""))
-            parentesco = st.text_input("Tu relación con ella *", value=previos.get("parentesco", ""), placeholder="Ej: nieto, hija, cuidador")
+            afectado_nombre = st.text_input("Nombre completo de la persona afectada *", key=sembrar("afectado_nombre"))
+            afectado_cedula = st.text_input("Cédula de la persona afectada (si la tienes)", key=sembrar("afectado_cedula"))
+            parentesco = st.text_input("Tu relación con ella *", key=sembrar("parentesco"), placeholder="Ej: nieto, hija, cuidador")
             if es_tutela:
                 motivo_agencia = st.text_input(
                     "¿Por qué ella no puede presentar la tutela por sí misma? *",
-                    value=previos.get("motivo_agencia", ""), placeholder="Ej: su estado de salud se lo impide",
+                    key=sembrar("motivo_agencia"), placeholder="Ej: su estado de salud se lo impide",
                     help="La ley permite que otra persona actúe como 'agente oficioso' cuando el titular no puede defenderse solo.",
                 )
 
         etiqueta = "Entidad o persona contra quien va la tutela *" if es_tutela else caso["entidad_label"] + (" *" if caso["entidad_requerida"] else "")
-        entidad = st.text_input(etiqueta, value=previos.get("entidad", ""))
+        entidad = st.text_input(etiqueta, key=sembrar("entidad"))
 
         hechos = st.text_area(
-            "Revisa y completa tu relato *", value=st.session_state["relato"], height=200,
+            "Revisa y completa tu relato *", key=sembrar("hechos_form", st.session_state["relato"]), height=200,
             help="Es el mismo relato del paso anterior. Agrega lo que falte (fechas, nombres, números de radicado).",
         )
         usar_ia = st.checkbox(
             "Usar inteligencia artificial para redactar formalmente los hechos y las pretensiones",
-            value=st.session_state["usar_ia"],
+            key=sembrar("usar_ia", True),
             help="Solo se envía el texto del relato (sin tu nombre ni tu cédula).",
         )
         juramento = True
         if es_tutela:
             juramento = st.checkbox(
                 "Declaro bajo la gravedad del juramento que no he presentado otra tutela por los mismos hechos y derechos *",
-                value=previos.get("juramento", False),
+                key=sembrar("juramento", False),
             )
         st.caption("Los campos con * son obligatorios. No guardamos tus datos en ningún servidor.")
         enviado = st.form_submit_button("Generar Borrador Legal", type="primary", use_container_width=True)
 
     if enviado:
+        guardar_inputs()  # todo lo escrito se conserva tal cual, aunque haya errores de validación
         cedula_limpia = re.sub(r"[.\s]", "", cedula)
         datos = {
             "nombre": nombre, "cedula": cedula_limpia, "direccion": direccion, "ciudad": ciudad, "entidad": entidad,
-            "hechos": hechos, "usar_ia": usar_ia, "para_quien": st.session_state["para_quien"],
+            "hechos": hechos, "usar_ia": usar_ia, "para_quien": st.session_state[clave_pq],
             "afectado_nombre": afectado_nombre, "afectado_cedula": re.sub(r"[.\s]", "", afectado_cedula),
             "parentesco": parentesco, "motivo_agencia": motivo_agencia, "juramento": juramento,
         }
         st.session_state["datos"] = datos
         st.session_state["relato"] = hechos
-        st.session_state["usar_ia"] = usar_ia
+        st.session_state["almacen"]["relato"] = hechos  # si vuelve al paso del relato, verá la versión editada
 
         errores = []
         if len(nombre.strip().split()) < 2:
@@ -1652,7 +1728,7 @@ def vista_formulario():
 
         if errores:
             for e in errores:
-                st.error(e)
+                st.error(e)  # los campos se quedan exactamente como el usuario los dejó
         else:
             with st.spinner("Redactando tu documento..."):
                 hechos_f, pret_f, estado = redactar_documento(mec_id, caso_id, datos)
@@ -1661,6 +1737,7 @@ def vista_formulario():
                 mec_id, caso_id, datos, hechos_f, pret_f, st.session_state["analisis"]
             )
             st.session_state["paso"] = "documento"
+            nueva_generacion()
             st.rerun()
 
     st.button("⬅️ Volver a la asesoría", key="volver_capsula", on_click=ir_a, kwargs={"paso": "capsula"})
