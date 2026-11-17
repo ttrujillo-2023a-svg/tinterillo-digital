@@ -18,6 +18,7 @@ Ejecutar en local:  streamlit run app.py
 Secretos:           st.secrets["GEMINI_API_KEY"]  (opcional: "GEMINI_MODEL", "DEBUG_IA")
 """
 
+import html
 import json
 import re
 import time
@@ -62,6 +63,14 @@ MAX_LLAMADAS_IA_SESION = 10       # tope de llamadas a la IA por sesión de usua
 
 NIVELES = ["BAJA", "MEDIA", "ALTA", "CRITICA"]  # de menor a mayor urgencia
 ETIQUETA_NIVEL = {"CRITICA": "🔴 CRÍTICA", "ALTA": "🟠 ALTA", "MEDIA": "🟡 MEDIA", "BAJA": "🟢 BAJA"}
+
+INSIGNIA_PLAZO = {
+    "TUTELA": "🚨 10 días hábiles — Acción de Tutela",
+    "ACCION_POPULAR_REQUISITO": "⏳ 15 días — Requisito Art. 144 CPACA",
+    "RECLAMACION_INDEMNIZACION": "⏳ 15 días hábiles — Caducidad 2 años",
+    "RECLAMO_SERVICIOS_PUBLICOS": "⏳ 15 días hábiles — Silencio Positivo",
+    "AUDIENCIA_COMPARENDO": "⚡ Plazo muy corto — Revisar comparendo",
+}
 
 # Derechos fundamentales que la IA puede invocar en una tutela (lista blanca)
 DERECHOS_PERMITIDOS = [
@@ -726,7 +735,522 @@ for _cat_id, _cat in CATEGORIAS.items():
 
 
 # =============================================================================
-# 4. ESTADO Y NAVEGACIÓN
+# 4. IDENTIDAD VISUAL, CSS JURÍDICO Y ANIMACIONES SVG/CSS
+# =============================================================================
+def md_negritas_a_html(texto):
+    """Escapa HTML inseguro y convierte **negritas** y saltos de línea en HTML limpio."""
+    seguro = html.escape(str(texto or ""))
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", seguro).replace("\n", "<br>")
+
+
+def inyectar_estilos():
+    """Aplica la identidad visual de bufete jurídico clásico y las animaciones CSS."""
+    st.markdown(
+        """<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+:root {
+  --td-navy: #1B2A41;
+  --td-navy-deep: #131F31;
+  --td-gold: #B08D57;
+  --td-gold-soft: #EFE6D5;
+  --td-burgundy: #7A1E2E;
+  --td-linen: #F3EEE3;
+  --td-ivory: #FFFFFF;
+  --td-paper: #FFFEFA;
+  --td-slate: #5A6B7D;
+}
+html, body, [data-testid="stAppViewContainer"], .stApp {
+  background-color: var(--td-linen) !important;
+  color: var(--td-navy) !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+[data-testid="stHeader"] {
+  background-color: rgba(243, 238, 227, 0.92) !important;
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(176, 141, 87, 0.28);
+}
+[data-testid="stMainBlockContainer"], .block-container {
+  padding-top: 1.5rem !important;
+  padding-bottom: 3rem !important;
+  max-width: 790px !important;
+}
+/* Tipografía institucional */
+h1, h2, h3, [data-testid="stHeading"] h1, [data-testid="stHeading"] h2, [data-testid="stHeading"] h3 {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  color: var(--td-navy) !important;
+  letter-spacing: -0.01em;
+}
+p, li, label, span, .stMarkdown, [data-testid="stCaptionContainer"] {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+[data-testid="stCaptionContainer"] p {
+  color: var(--td-slate) !important;
+}
+/* Sidebar estilo dossier lateral */
+[data-testid="stSidebar"] {
+  background-color: #EAE3D4 !important;
+  border-right: 2px solid rgba(176, 141, 87, 0.55) !important;
+}
+[data-testid="stSidebar"] h3 {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  color: var(--td-navy) !important;
+  border-bottom: 2px solid var(--td-gold);
+  padding-bottom: 0.4rem;
+}
+/* Barra de progreso */
+[data-testid="stProgressBar"] > div > div {
+  background-color: rgba(90, 107, 125, 0.22) !important;
+  border-radius: 999px !important;
+}
+[data-testid="stProgressBar"] > div > div > div {
+  background: linear-gradient(90deg, var(--td-navy) 0%, var(--td-gold) 100%) !important;
+  border-radius: 999px !important;
+}
+/* Banner membrete institucional */
+.td-banner {
+  background: linear-gradient(135deg, #1B2A41 0%, #243754 100%);
+  color: #FFFFFF;
+  padding: 1.35rem 1.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(176, 141, 87, 0.55);
+  border-bottom: 4px solid #B08D57;
+  box-shadow: 0 6px 18px rgba(27, 42, 65, 0.14);
+  margin-bottom: 1.25rem;
+  position: relative;
+}
+.td-banner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.td-banner-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1.2;
+}
+.td-banner-sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #DEC393;
+  margin-top: 0.35rem;
+  font-weight: 500;
+}
+.td-banner-seal {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 0.78rem;
+  color: #F3EEE3;
+  border: 1px solid rgba(176, 141, 87, 0.7);
+  background: rgba(176, 141, 87, 0.14);
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* Botones primarios y de envío / descarga */
+.stButton > button[kind="primary"],
+.stFormSubmitButton > button,
+.stDownloadButton > button {
+  background: linear-gradient(180deg, #1B2A41 0%, #142033 100%) !important;
+  color: #FFFFFF !important;
+  border: 1px solid #B08D57 !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  padding: 0.65rem 1.15rem !important;
+  box-shadow: 0 4px 12px rgba(27, 42, 65, 0.16) !important;
+  transition: all 0.22s ease !important;
+}
+.stButton > button[kind="primary"]:hover,
+.stFormSubmitButton > button:hover,
+.stDownloadButton > button:hover {
+  background: linear-gradient(180deg, #253957 0%, #1B2A41 100%) !important;
+  border-color: #D2B17A !important;
+  box-shadow: 0 6px 16px rgba(27, 42, 65, 0.24) !important;
+  transform: translateY(-1px);
+}
+.stButton > button[kind="primary"] p,
+.stFormSubmitButton > button p,
+.stDownloadButton > button p {
+  color: #FFFFFF !important;
+}
+/* Botones secundarios estándar */
+.stButton > button[kind="secondary"] {
+  background-color: #FFFFFF !important;
+  color: #1B2A41 !important;
+  border: 1px solid rgba(90, 107, 125, 0.45) !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 6px rgba(27, 42, 65, 0.06) !important;
+  transition: all 0.22s ease !important;
+}
+.stButton > button[kind="secondary"]:hover {
+  border-color: #B08D57 !important;
+  background-color: #FAF7F0 !important;
+  color: #1B2A41 !important;
+}
+/* Tarjetas interactivas del Menú y Submenú */
+div:has(.td-cards-start):not(:has(button)) ~ div .stButton > button[kind="secondary"] {
+  background-color: #FFFFFF !important;
+  color: #1B2A41 !important;
+  border: 1px solid rgba(90, 107, 125, 0.35) !important;
+  border-left: 5px solid #B08D57 !important;
+  border-radius: 10px !important;
+  padding: 1rem 1.25rem !important;
+  min-height: 3.4rem !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  font-size: 1.04rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 12px rgba(27, 42, 65, 0.08) !important;
+  transition: all 0.24s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+div:has(.td-cards-start):not(:has(button)) ~ div .stButton > button[kind="secondary"]:hover {
+  background-color: #1B2A41 !important;
+  color: #FFFFFF !important;
+  border-color: #1B2A41 !important;
+  border-left: 6px solid #B08D57 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(27, 42, 65, 0.16) !important;
+}
+div:has(.td-cards-start):not(:has(button)) ~ div .stButton > button[kind="secondary"]:hover p {
+  color: #FFFFFF !important;
+}
+/* Restablece el estilo sutil para los botones posteriores a td-cards-end (ej. Volver) */
+div:has(.td-cards-end):not(:has(button)) ~ div .stButton > button[kind="secondary"] {
+  background-color: #FFFFFF !important;
+  color: #1B2A41 !important;
+  border: 1px solid rgba(90, 107, 125, 0.45) !important;
+  border-left: 1px solid rgba(90, 107, 125, 0.45) !important;
+  border-radius: 8px !important;
+  padding: 0.5rem 1rem !important;
+  min-height: 0 !important;
+  justify-content: center !important;
+  font-size: 0.92rem !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 6px rgba(27, 42, 65, 0.05) !important;
+}
+div:has(.td-cards-end):not(:has(button)) ~ div .stButton > button[kind="secondary"]:hover {
+  background-color: #FAF7F0 !important;
+  color: #1B2A41 !important;
+  border-color: #B08D57 !important;
+  transform: none !important;
+}
+div:has(.td-cards-end):not(:has(button)) ~ div .stButton > button[kind="secondary"]:hover p {
+  color: #1B2A41 !important;
+}
+/* Formularios, inputs y expanders */
+[data-testid="stForm"], [data-testid="stExpander"] {
+  background-color: #FFFFFF !important;
+  border: 1px solid rgba(90, 107, 125, 0.35) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 12px rgba(27, 42, 65, 0.07) !important;
+}
+[data-testid="stForm"] {
+  padding: 1.25rem 1.35rem !important;
+}
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea {
+  background-color: #FCFBF8 !important;
+  border: 1px solid rgba(90, 107, 125, 0.45) !important;
+  border-radius: 7px !important;
+  color: #1B2A41 !important;
+}
+[data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus {
+  border-color: #B08D57 !important;
+  box-shadow: 0 0 0 2px rgba(176, 141, 87, 0.25) !important;
+}
+/* Alertas de Streamlit armonizadas */
+[data-testid="stAlert"] {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(27, 42, 65, 0.06) !important;
+}
+/* Cápsula Dictamen Jurídico */
+.td-dictamen {
+  background-color: #FFFFFF;
+  border: 1px solid rgba(90, 107, 125, 0.35);
+  border-left: 6px solid #1B2A41;
+  border-radius: 10px;
+  padding: 1.4rem 1.55rem;
+  box-shadow: 0 4px 14px rgba(27, 42, 65, 0.09);
+  margin: 0.75rem 0 1.25rem 0;
+}
+.td-dictamen-urgente {
+  border-left-color: #7A1E2E;
+}
+.td-dictamen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(176, 141, 87, 0.45);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+.td-dictamen-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1B2A41;
+  letter-spacing: 0.02em;
+}
+.td-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid #B08D57;
+  background-color: #FBF6EC;
+  color: #1B2A41;
+}
+.td-badge-critico {
+  border-color: #7A1E2E;
+  background-color: #FCECEF;
+  color: #7A1E2E;
+}
+.td-dictamen-item {
+  margin-bottom: 0.9rem;
+  line-height: 1.58;
+  color: #1F2D42;
+  font-size: 0.96rem;
+}
+.td-dictamen-item:last-child {
+  margin-bottom: 0;
+}
+.td-dictamen-label {
+  font-weight: 700;
+  color: #1B2A41;
+  display: block;
+  margin-bottom: 0.15rem;
+}
+/* Micro-animación de sello al mostrar dictamen */
+@keyframes td-stamp-hit {
+  0% { opacity: 0; transform: scale(1.22) rotate(-2deg); }
+  65% { opacity: 1; transform: scale(0.98) rotate(0.5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+.td-stamp-box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(90deg, #FBF7EE 0%, #FFFFFF 100%);
+  border: 1.5px dashed #B08D57;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  margin: 0.5rem 0 0.85rem 0;
+  animation: td-stamp-hit 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.td-stamp-box-critico {
+  border-color: #7A1E2E;
+  background: linear-gradient(90deg, #FDF2F4 0%, #FFFFFF 100%);
+}
+.td-stamp-text {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: #1B2A41;
+  letter-spacing: 0.03em;
+}
+.td-stamp-box-critico .td-stamp-text {
+  color: #7A1E2E;
+}
+/* Papel oficio para vista previa del borrador */
+.td-paper-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1B2A41;
+  color: #FFFFFF;
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 3px solid #B08D57;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-bottom: -0.95rem;
+}
+.td-paper-tag {
+  color: #DEC393;
+  font-size: 0.74rem;
+}
+div:has(.td-paper-scope):not(:has(textarea)) ~ div [data-testid="stTextArea"] textarea {
+  background-color: #FFFEFA !important;
+  font-family: 'Merriweather', Georgia, serif !important;
+  font-size: 0.91rem !important;
+  line-height: 1.7 !important;
+  color: #1A2332 !important;
+  padding: 1.5rem 1.75rem !important;
+  border: 1px solid #C8C0B0 !important;
+  border-top: none !important;
+  border-radius: 0 0 8px 8px !important;
+  box-shadow: 0 10px 28px rgba(27, 42, 65, 0.12) !important;
+}
+/* Animación 1: Juez analizando (mazo deliberando) */
+.td-anim-card {
+  background-color: #FFFFFF;
+  border: 1px solid rgba(176, 141, 87, 0.65);
+  border-top: 4px solid #1B2A41;
+  border-radius: 12px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(27, 42, 65, 0.1);
+  margin: 1rem 0;
+}
+.td-anim-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1B2A41;
+  margin: 0.85rem 0 0.35rem 0;
+}
+.td-anim-sub {
+  font-size: 0.9rem;
+  color: #5A6B7D;
+  margin: 0;
+}
+@keyframes td-gavel-deliberate {
+  0%, 100% { transform: rotate(10deg); }
+  40% { transform: rotate(-16deg); }
+  55% { transform: rotate(-10deg); }
+  72% { transform: rotate(-19deg); }
+}
+@keyframes td-pulse-ring {
+  0% { opacity: 0.65; transform: scale(0.85); }
+  100% { opacity: 0; transform: scale(1.45); }
+}
+.td-gavel-arm {
+  transform-origin: 106px 76px;
+  animation: td-gavel-deliberate 1.5s ease-in-out infinite;
+}
+.td-sound-ring {
+  transform-origin: 48px 84px;
+  animation: td-pulse-ring 1.5s ease-out infinite;
+}
+/* Animación 2: Tinterillo redactando (pluma y líneas progresivas) */
+@keyframes td-pen-write {
+  0%   { transform: translate(0px, 0px); }
+  22%  { transform: translate(52px, 0px); }
+  26%  { transform: translate(0px, 14px); }
+  48%  { transform: translate(56px, 14px); }
+  52%  { transform: translate(0px, 28px); }
+  74%  { transform: translate(44px, 28px); }
+  78%  { transform: translate(0px, 42px); }
+  96%  { transform: translate(50px, 42px); }
+  100% { transform: translate(0px, 0px); }
+}
+@keyframes td-line-1 {
+  0%, 4% { transform: scaleX(0); }
+  22%, 95% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+@keyframes td-line-2 {
+  0%, 26% { transform: scaleX(0); }
+  48%, 95% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+@keyframes td-line-3 {
+  0%, 52% { transform: scaleX(0); }
+  74%, 95% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+@keyframes td-line-4 {
+  0%, 78% { transform: scaleX(0); }
+  95% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+.td-fountain-pen {
+  animation: td-pen-write 3.4s ease-in-out infinite;
+}
+.td-wline { transform-box: fill-box; transform-origin: left center; }
+.td-wline-1 { animation: td-line-1 3.4s linear infinite; }
+.td-wline-2 { animation: td-line-2 3.4s linear infinite; }
+.td-wline-3 { animation: td-line-3 3.4s linear infinite; }
+.td-wline-4 { animation: td-line-4 3.4s linear infinite; }
+</style>""",
+        unsafe_allow_html=True,
+    )
+
+
+def encabezado_institucional():
+    """Banner superior tipo membrete de firma legal."""
+    st.markdown(
+        """<div class="td-banner">
+<div class="td-banner-top">
+<div>
+<div class="td-banner-title">⚖️ Tinterillo Digital</div>
+<div class="td-banner-sub">Despacho de Orientación Jurídica Ciudadana • Colombia</div>
+</div>
+<div class="td-banner-seal">Defensa de Derechos • Trámite Gratuito</div>
+</div>
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def animacion_juez_deliberando():
+    """HTML/SVG de Animación 1: mazo de juez balanceándose durante el análisis de gravedad."""
+    return """<div class="td-anim-card">
+<svg width="144" height="106" viewBox="0 0 144 106" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<ellipse class="td-sound-ring" cx="48" cy="84" rx="22" ry="6" stroke="#B08D57" stroke-width="1.8"/>
+<rect x="26" y="79" width="44" height="11" rx="4" fill="#1B2A41"/>
+<rect x="23" y="88" width="50" height="7" rx="3" fill="#B08D57"/>
+<g class="td-gavel-arm">
+<rect x="44" y="34" width="70" height="8" rx="4" transform="rotate(32 44 34)" fill="#B08D57" stroke="#1B2A41" stroke-width="1.5"/>
+<rect x="27" y="18" width="24" height="40" rx="5" transform="rotate(32 27 18)" fill="#1B2A41"/>
+<rect x="28" y="21" width="22" height="5" rx="2" transform="rotate(32 28 21)" fill="#B08D57"/>
+<rect x="13" y="45" width="22" height="5" rx="2" transform="rotate(32 13 45)" fill="#B08D57"/>
+</g>
+</svg>
+<div class="td-anim-title">⚖️ El despacho está evaluando la gravedad jurídica de tu caso...</div>
+<p class="td-anim-sub">Verificando derechos comprometidos, nivel de urgencia y vía procesal recomendada.</p>
+</div>"""
+
+
+def sello_dictamen_listo(mec_id, nivel, riesgo_vital):
+    """Micro-animación de impacto del martillazo y sello del mecanismo jurídico elegido."""
+    urgente = bool(riesgo_vital) or nivel in ("ALTA", "CRITICA") or mec_id == "TUTELA"
+    clase_box = "td-stamp-box td-stamp-box-critico" if urgente else "td-stamp-box"
+    nombre_mec = html.escape(MECANISMOS[mec_id]["nombre"].upper())
+    color_icono = "#7A1E2E" if urgente else "#1B2A41"
+    return f"""<div class="{clase_box}">
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<circle cx="14" cy="14" r="12.5" stroke="{color_icono}" stroke-width="1.8"/>
+<path d="M9 19H19M11 16L15 9M13 8L18 11" stroke="#B08D57" stroke-width="2" stroke-linecap="round"/>
+</svg>
+<div class="td-stamp-text">¡DICTAMEN LISTO: {nombre_mec}!</div>
+</div>"""
+
+
+def animacion_tinterillo_redactando():
+    """HTML/SVG de Animación 2: pluma estilográfica escribiendo sobre pergamino."""
+    return """<div class="td-anim-card">
+<svg width="180" height="114" viewBox="0 0 180 114" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="34" y="14" width="94" height="86" rx="6" fill="#FFFEFA" stroke="#B08D57" stroke-width="2"/>
+<path d="M110 14V28H124" stroke="#B08D57" stroke-width="1.5" fill="#F3EEE3"/>
+<rect x="46" y="25" width="38" height="4" rx="2" fill="#1B2A41" opacity="0.35"/>
+<rect class="td-wline td-wline-1" x="46" y="40" width="56" height="3.5" rx="1.75" fill="#1B2A41"/>
+<rect class="td-wline td-wline-2" x="46" y="54" width="60" height="3.5" rx="1.75" fill="#1B2A41"/>
+<rect class="td-wline td-wline-3" x="46" y="68" width="48" height="3.5" rx="1.75" fill="#1B2A41"/>
+<rect class="td-wline td-wline-4" x="46" y="82" width="54" height="3.5" rx="1.75" fill="#7A1E2E"/>
+<g class="td-fountain-pen">
+<path d="M46 40L52 29L63 14L69 19L57 34L46 40Z" fill="#1B2A41"/>
+<path d="M46 40L51 31L55 34L46 40Z" fill="#B08D57"/>
+<circle cx="46" cy="40" r="1.5" fill="#7A1E2E"/>
+</g>
+</svg>
+<div class="td-anim-title">✒️ Tu Tinterillo Digital está redactando tu documento con rigor jurídico...</div>
+<p class="td-anim-sub">Ordenando hechos cronológicamente y formulando pretensiones claras.</p>
+</div>"""
+
+
+# =============================================================================
+# 5. ESTADO Y NAVEGACIÓN
 # =============================================================================
 def iniciar_estado():
     defaults = {
@@ -848,12 +1372,16 @@ def fecha_formal():
 
 def indicador_progreso():
     pasos = {"menu": 1, "submenu": 2, "relato": 3, "capsula": 4, "formulario": 5, "documento": 6}
+    nombres = {
+        1: "Tema", 2: "Situación", 3: "Relato",
+        4: "Dictamen", 5: "Datos", 6: "Borrador",
+    }
     actual = pasos[st.session_state["paso"]]
-    st.progress(actual / 6, text=f"Paso {actual} de 6")
+    st.progress(actual / 6, text=f"Paso {actual} de 6 — {nombres[actual]}")
 
 
 # =============================================================================
-# 5. CAPA DE IA (Google Gemini) Y UTILIDADES
+# 6. CAPA DE IA (Google Gemini) Y UTILIDADES
 # =============================================================================
 def obtener_secret(nombre, default=None):
     """Lee un secreto de forma segura; si no existe secrets.toml o la clave, devuelve default."""
@@ -1058,7 +1586,7 @@ def nivel_max(a, b):
 
 
 # =============================================================================
-# 6. ANÁLISIS DE GRAVEDAD (IA + RED DE SEGURIDAD POR REGLAS)
+# 7. ANÁLISIS DE GRAVEDAD (IA + RED DE SEGURIDAD POR REGLAS)
 # =============================================================================
 def triaje_por_reglas(caso_id, relato):
     """Triaje determinista por palabras clave. Siempre se ejecuta; sirve de respaldo y de piso de seguridad."""
@@ -1177,7 +1705,7 @@ def analizar_caso(caso_id, relato, usar_ia):
 
 
 # =============================================================================
-# 7. REDACCIÓN DE HECHOS Y PRETENSIONES (IA) Y GENERACIÓN DEL DOCUMENTO
+# 8. REDACCIÓN DE HECHOS Y PRETENSIONES (IA) Y GENERACIÓN DEL DOCUMENTO
 # =============================================================================
 def nombre_entidad(datos, caso):
     return datos["entidad"].strip() or caso["destino"]
@@ -1266,576 +1794,4 @@ def generar_borrador(mec_id, caso_id, datos, hechos, pretensiones, analisis):
     afectado_txt = afectado + (f", identificado(a) con cédula de ciudadanía No. {afectado_cc}" if afectado_cc else "")
     anexos = list(caso["anexos"])
     if para_otro:
-        anexos.append("Prueba del parentesco o autorización de la persona afectada, si la hay (por ejemplo, registro civil).")
-
-    if mec["tipo_doc"] == "tutela":
-        return _borrador_tutela(mec_id, caso_id, datos, hechos, pretensiones, analisis, nombre, afectado, afectado_txt, anexos)
-
-    # ------------------ Documentos tipo petición / reclamo / queja ------------------
-    entidad = datos["entidad"].strip()
-    destinatario = f"Señores\n{entidad}\n{caso['dependencia']}" if entidad else f"Señores\n{caso['destino_default']}"
-    quien = (
-        "actuando en nombre propio"
-        if not para_otro
-        else f"actuando en favor de {afectado_txt}, de quien soy {parentesco}"
-    )
-    fundamentos = lista_guiones(mec["fundamentos"] + caso["fundamentos_extra"])
-
-    return f"""{ciudad}, {fecha_formal()}
-
-{destinatario}
-{ciudad}
-
-REF.: {mec['ref']} - {caso['tema']}
-
-Respetados señores:
-
-Yo, {nombre}, mayor de edad, identificado(a) con cédula de ciudadanía No. {cedula}, {quien}, {mec['intro']}, con base en los siguientes:
-
-I. HECHOS
-
-{hechos.strip()}
-
-II. PETICIONES
-
-Con fundamento en lo anterior, solicito respetuosamente:
-
-{lista_numerada(pretensiones)}
-
-III. FUNDAMENTOS DE DERECHO
-
-{fundamentos}
-
-IV. PRUEBAS Y ANEXOS
-
-Adjunto los siguientes documentos:
-
-{lista_guiones(anexos)}
-
-V. NOTIFICACIONES
-
-Recibiré notificaciones en: {datos['direccion'].strip()}
-
-Solicito que la respuesta sea clara, completa y de fondo, dentro del término legal.
-
-Atentamente,
-
-
-______________________________
-{nombre}
-C.C. No. {cedula}
-"""
-
-
-def _borrador_tutela(mec_id, caso_id, datos, hechos, pretensiones, analisis, nombre, afectado, afectado_txt, anexos):
-    caso = CASOS[caso_id]
-    ciudad = datos["ciudad"].strip()
-    cedula = datos["cedula"]
-    para_otro = datos["para_quien"] == "otra"
-    entidad = nombre_entidad(datos, caso)
-
-    derechos = analisis["derechos"] if (analisis and analisis.get("derechos")) else list(caso["derechos_base"])
-    derechos = derechos or ["debido proceso"]
-    derechos_txt = ", ".join(ETIQUETA_DERECHO.get(d, d) for d in derechos)
-    urgente = bool(analisis) and (analisis["riesgo_vital"] or analisis["nivel"] in ("ALTA", "CRITICA"))
-
-    if para_otro:
-        quien = (
-            f"actuando como AGENTE OFICIOSO de {afectado_txt}, de quien soy {datos['parentesco'].strip()} "
-            f"(artículo 10 del Decreto 2591 de 1991), pues el/la titular no está en condiciones de promover su propia "
-            f"defensa: {datos['motivo_agencia'].strip()}"
-        )
-        encabezado_partes = (
-            f"ACCIONANTE (AGENTE OFICIOSO): {nombre} - C.C. {cedula}\n"
-            f"AGENCIADO(A): {afectado}\n"
-        )
-    else:
-        quien = "actuando en nombre propio"
-        encabezado_partes = f"ACCIONANTE: {nombre} - C.C. {cedula}\n"
-
-    # Pretensiones: la primera siempre es amparar los derechos
-    pret_final = [f"Tutelar los derechos fundamentales a {derechos_txt}, vulnerados por {entidad}."] + list(pretensiones)
-
-    # Fundamentos de derecho según los derechos invocados
-    fund = [
-        "Artículo 86 de la Constitución Política y Decreto 2591 de 1991: la tutela protege los derechos fundamentales amenazados o vulnerados por autoridades o particulares.",
-        "Procedencia: se interpone por considerar que los hechos vulneran derechos fundamentales y que no existe otro medio de defensa judicial idóneo y eficaz o, en su defecto, para evitar un perjuicio irremediable.",
-    ]
-    if para_otro:
-        fund.append("Artículo 10 del Decreto 2591 de 1991: se pueden agenciar derechos ajenos cuando el titular no esté en condiciones de promover su propia defensa.")
-    if "vida" in derechos:
-        fund.append("Artículo 11 de la Constitución Política: derecho fundamental a la vida.")
-    if "salud" in derechos:
-        fund.append("Artículo 49 de la Constitución Política y Ley 1751 de 2015 (Estatutaria de Salud): la salud es un derecho fundamental autónomo.")
-    if "petición" in derechos:
-        fund.append("Artículo 23 de la Constitución Política y Ley 1755 de 2015: derecho de petición.")
-    if "debido proceso" in derechos:
-        fund.append("Artículo 29 de la Constitución Política: debido proceso y derecho de defensa.")
-    if urgente:
-        fund.append("Artículo 13 de la Constitución Política: especial protección a las personas en circunstancias de debilidad manifiesta.")
-    fund += caso["fundamentos_extra"]
-
-    medida = ""
-    if urgente:
-        medida = (
-            "IV. MEDIDA PROVISIONAL\n\n"
-            "Con fundamento en el artículo 7 del Decreto 2591 de 1991, y dada la urgencia descrita en los hechos, solicito "
-            "respetuosamente al Despacho que decrete como medida provisional que la entidad accionada cumpla de manera "
-            "inmediata lo solicitado en la pretensión segunda, mientras se profiere el fallo de fondo.\n\n"
-        )
-    num = {"fund": "V" if urgente else "IV", "jur": "VI" if urgente else "V", "prue": "VII" if urgente else "VI", "noti": "VIII" if urgente else "VII"}
-
-    return f"""{ciudad}, {fecha_formal()}
-
-Señor
-JUEZ DE LA REPÚBLICA (REPARTO)
-E. S. D.
-
-REF.: ACCIÓN DE TUTELA - {caso['tema']}
-{encabezado_partes}ACCIONADO: {entidad}
-
-Yo, {nombre}, mayor de edad, identificado(a) con cédula de ciudadanía No. {cedula}, {quien}, en ejercicio de la acción de tutela consagrada en el artículo 86 de la Constitución Política y reglamentada por el Decreto 2591 de 1991, solicito que se protejan los derechos fundamentales a {derechos_txt}, con base en los siguientes:
-
-I. HECHOS
-
-{hechos.strip()}
-
-II. DERECHOS FUNDAMENTALES VULNERADOS
-
-Considero vulnerados los derechos fundamentales a: {derechos_txt}.
-
-III. PRETENSIONES
-
-Con fundamento en lo anterior, solicito respetuosamente al Despacho:
-
-{lista_numerada(pret_final)}
-
-{medida}{num['fund']}. FUNDAMENTOS DE DERECHO
-
-{lista_guiones(fund)}
-
-{num['jur']}. JURAMENTO
-
-Bajo la gravedad del juramento manifiesto que no he presentado otra acción de tutela por los mismos hechos y derechos (artículo 37 del Decreto 2591 de 1991).
-
-{num['prue']}. PRUEBAS Y ANEXOS
-
-Solicito tener como pruebas los siguientes documentos:
-
-{lista_guiones(anexos)}
-
-{num['noti']}. NOTIFICACIONES
-
-Accionante: {datos['direccion'].strip()}
-Accionado ({entidad}): [COMPLETAR: dirección física o correo de notificación judicial de la entidad accionada]
-
-Atentamente,
-
-
-______________________________
-{nombre}
-C.C. No. {cedula}
-"""
-
-
-def reintentar_analisis():
-    """Callback: vuelve a analizar el relato con IA sin pedirle nada al usuario."""
-    analisis = analizar_caso(st.session_state["caso"], st.session_state["relato"].strip(), True)
-    st.session_state["analisis"] = analisis
-    st.session_state["mecanismo"] = analisis["mecanismo"]
-
-
-def reintentar_redaccion():
-    """Callback: vuelve a redactar hechos y pretensiones con IA y regenera el borrador."""
-    caso_id, mec_id = st.session_state["caso"], st.session_state["mecanismo"]
-    datos = dict(st.session_state["datos"], usar_ia=True)
-    hechos_f, pret_f, estado = redactar_documento(mec_id, caso_id, datos)
-    st.session_state["estado_redaccion"] = estado
-    st.session_state["borrador"] = generar_borrador(mec_id, caso_id, datos, hechos_f, pret_f, st.session_state["analisis"])
-
-
-def lista_chequeo(mec_id, caso_id):
-    caso = CASOS[caso_id]
-    mec = MECANISMOS[mec_id]
-    base = [
-        "Revisé que mis datos (nombre, cédula, dirección o correo) estén correctos.",
-        "Leí con atención los **hechos** y verifiqué que no cambiaron ni inventaron ningún dato.",
-        "Reemplacé cualquier marca que diga [COMPLETAR: ...] antes de imprimir.",
-        "Imprimí el documento y lo **firmé**.",
-        "Anexé las pruebas: " + "; ".join(a.rstrip(".") for a in caso["anexos"]) + ".",
-    ]
-    if mec_id == "TUTELA":
-        base.append("Lo presenté ante el juez (oficina judicial/reparto o tutela en línea) y guardé la constancia de recibido.")
-    else:
-        base.append(f"Lo radiqué en: {caso['destino']}, y pedí que **sellen y feches** mi copia con el **número de radicado**.")
-        base.append("Anoté la fecha límite de respuesta contando **solo días hábiles** (sin sábados, domingos ni festivos).")
-    base += mec["checklist"]
-    base.append("Guardé una foto o escaneo de mi copia y de todos los anexos.")
-    return base
-
-
-# =============================================================================
-# 8. VISTAS (UNA POR CADA PASO)
-# =============================================================================
-def vista_menu():
-    """PASO 1: Menú principal con 4 botones."""
-    st.title("⚖️ Tinterillo Digital")
-    st.markdown(
-        "¡Hola! Soy tu **orientador legal comunitario**. Analizo qué tan urgente es tu caso, te recomiendo el "
-        "mecanismo legal adecuado, te explico el paso a paso y te dejo listo un borrador para radicar."
-    )
-    st.subheader("¿Con qué tema necesitas ayuda?")
-    for cat_id, cat in CATEGORIAS.items():
-        st.button(
-            f"{cat['icono']}  {cat['nombre']}", key=f"btn_cat_{cat_id}", use_container_width=True,
-            on_click=ir_a, kwargs={"paso": "submenu", "categoria": cat_id},
-        )
-        st.caption(cat["detalle"])
-
-
-def vista_submenu():
-    """PASO 2: Submenú específico de la categoría elegida."""
-    cat = CATEGORIAS[st.session_state["categoria"]]
-    st.header(f"{cat['icono']} {cat['nombre']}")
-    st.subheader("¿Cuál de estas situaciones se parece más a la tuya?")
-    for caso_id in cat["subs"]:
-        st.button(
-            CASOS[caso_id]["titulo"], key=f"btn_sub_{caso_id}", use_container_width=True,
-            on_click=nuevo_caso, args=(caso_id,),
-        )
-    st.divider()
-    st.button("⬅️ Volver al menú principal", key="volver_menu", on_click=ir_a, kwargs={"paso": "menu"})
-
-
-def vista_relato():
-    """PASO 3: Relato libre. Al enviarlo se ejecuta el análisis de gravedad."""
-    caso_id = st.session_state["caso"]
-    caso = CASOS[caso_id]
-    st.header("🗣️ Cuéntanos qué pasó")
-    st.caption(f"Caso: {caso['titulo']}")
-    st.markdown(caso["hint"])
-
-    # Los campos usan key estable (sembrada desde el almacén) y NO usan value=: así Streamlit nunca
-    # los reinicia con un texto viejo y lo que el usuario escribe es exactamente lo que se lee al enviar.
-    with st.form("form_relato"):
-        relato = st.text_area(
-            "Describe los hechos con tus propias palabras *",
-            key=sembrar("relato", ""), height=220, placeholder=f"Ej: {caso['ejemplo']}",
-            help="Escribe como hablas; no importa la ortografía.",
-        )
-        st.caption("🔒 No escribas aquí tu cédula, teléfono ni dirección: esos datos se piden después.")
-        usar_ia = st.checkbox(
-            "Autorizo analizar mi relato con inteligencia artificial para evaluar la urgencia y recomendar el mecanismo",
-            key=sembrar("usar_ia", True),
-            help="Solo se envía el texto del relato a un servicio de IA externo. Sin esta autorización, se usa un análisis automático por reglas.",
-        )
-        enviado = st.form_submit_button("Analizar mi caso", type="primary", use_container_width=True)
-
-    if enviado:
-        guardar_inputs()  # lo escrito se conserva tal cual, aunque la validación falle
-        st.session_state["relato"] = relato
-        if len(relato.strip()) < 30:
-            st.error("Cuéntanos un poco más (mínimo 2 o 3 frases) para poder analizar tu caso.")
-        elif not relato_parece_valido(relato):
-            st.error(MENSAJE_RELATO_INVALIDO)
-        else:
-            with st.spinner("Analizando la gravedad de tu caso..."):
-                analisis = analizar_caso(caso_id, relato.strip(), usar_ia)
-            if not analisis.get("relato_valido", True):
-                st.warning("🤔 " + analisis["justificacion"])  # la IA explica qué corregir; el texto se queda como está
-            else:
-                st.session_state["analisis"] = analisis
-                st.session_state["mecanismo"] = analisis["mecanismo"]
-                st.session_state["almacen"].pop("hechos_form", None)  # el formulario se rellenará con este relato
-                st.session_state["paso"] = "capsula"
-                nueva_generacion()
-                st.rerun()
-
-    st.button("⬅️ Volver", key="volver_submenu", on_click=ir_a, kwargs={"paso": "submenu"})
-
-
-def texto_capsula(analisis, caso, mec_id):
-    """Arma la Cápsula de Asesoría: texto personalizado (IA) + datos legales fijos (catálogo)."""
-    mec = MECANISMOS[mec_id]
-    entrega = mec["entrega"].format(destino=caso["destino"], nota=caso["nota"], accionado=caso["destino"])
-    partes = [
-        f"**1. Mecanismo recomendado:** {mec['nombre']}.\n{mec['explicacion']}",
-    ]
-    if mec_id == analisis["mecanismo"]:
-        partes.append(f"**2. ¿Por qué esta vía para tu caso?**\n{analisis['justificacion']}")
-    else:
-        partes.append(
-            "**2. ¿Por qué esta vía?**\nElegiste una vía distinta a la que recomendó el análisis. "
-            "Puedes volver a la recomendada en el recuadro de abajo."
-        )
-    partes += [
-        f"**3. Plazo legal:** {mec['plazo']}.",
-        f"**4. ¿Qué pasa si hay omisión o silencio?**\n{mec['omision']}.",
-        f"**5. ¿A quién se entrega?**\n{entrega}",
-        f"**6. Ten a la mano:** {caso['tengo_a_mano']}",
-    ]
-    if analisis["faltantes"]:
-        partes.append("**Te recomiendo agregar a tu relato:**\n" + "\n".join(f"- {f}" for f in analisis["faltantes"]))
-    return "\n\n".join(partes)
-
-
-def vista_capsula():
-    """PASO 4: Cápsula de Asesoría Dinámica (obligatoria antes de pedir datos personales)."""
-    caso = CASOS[st.session_state["caso"]]
-    analisis = st.session_state["analisis"]
-    mec_id = st.session_state["mecanismo"]
-
-    st.header("📚 Cápsula de Asesoría Legal")
-    st.subheader(caso["titulo"])
-    st.markdown(f"**Nivel de urgencia detectado:** {ETIQUETA_NIVEL[analisis['nivel']]}")
-
-    if analisis["riesgo_vital"] or analisis["nivel"] == "CRITICA":
-        st.error("🚨 **Posible riesgo vital.** " + (analisis["alerta"] or ALERTA_VITAL))
-
-    st.info(texto_capsula(analisis, caso, mec_id))
-
-    # Transparencia sobre la fuente del análisis
-    if analisis["fuente"] == "ia":
-        st.caption(
-            "🤖 La urgencia y la recomendación fueron analizadas con IA. Los plazos, consecuencias y entidades "
-            "provienen del catálogo fijo de la app, no de la IA. Es una orientación, no una asesoría jurídica personalizada."
-        )
-    else:
-        motivos = {
-            "omitida": "elegiste no usar IA",
-            "sin_clave": "la IA no está configurada: falta el secreto GEMINI_API_KEY",
-            "limite": "se alcanzó el límite de usos de IA en esta sesión",
-            "error": CAUSAS_IA.get(analisis.get("causa"), "la IA no estuvo disponible"),
-        }
-        st.caption(
-            f"⚙️ Análisis automático por reglas ({motivos.get(analisis['estado'], 'la IA no estuvo disponible')}). "
-            "Es una orientación general: ante la duda, consulta a un abogado o a la Personería."
-        )
-        if analisis["estado"] == "error":
-            st.button("🔁 Reintentar el análisis con IA", key="reintentar_analisis", on_click=reintentar_analisis)
-
-    otros = [m for m in caso["permitidos"] if m != mec_id]
-    if otros:
-        with st.expander("¿Prefieres otra vía?"):
-            for m in otros:
-                etiqueta = MECANISMOS[m]["nombre"] + (" (recomendada)" if m == analisis["mecanismo"] else "")
-                st.button(f"Usar: {etiqueta}", key=f"alt_{m}", on_click=elegir_mecanismo, args=(m,))
-
-    st.markdown("**¿Listo para proceder?** Continúa y te pediré tus datos para redactar el borrador.")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.button("✅ Entendido, continuar", key="continuar_capsula", type="primary", use_container_width=True,
-                  on_click=ir_a, kwargs={"paso": "formulario"})
-    with col2:
-        st.button("⬅️ Editar mi relato", key="volver_relato", use_container_width=True,
-                  on_click=ir_a, kwargs={"paso": "relato"})
-
-
-def vista_formulario():
-    """PASO 5: Formulario. La IA redacta hechos y pretensiones al enviarlo."""
-    caso_id = st.session_state["caso"]
-    caso = CASOS[caso_id]
-    mec_id = st.session_state["mecanismo"]
-    es_tutela = mec_id == "TUTELA"
-
-    st.header("📝 Tus datos")
-    st.caption(f"Caso: {caso['titulo']}  |  Mecanismo: {MECANISMOS[mec_id]['nombre']}")
-
-    # Esta pregunta va FUERA del formulario para que los campos de abajo cambien al instante
-    clave_pq = sembrar("para_quien", "yo")
-    st.radio(
-        "¿Para quién es este trámite?", options=["yo", "otra"], key=clave_pq, horizontal=True,
-        format_func=lambda v: {"yo": "Para mí", "otra": "Para otra persona (familiar o alguien a quien ayudo)"}[v],
-    )
-    para_otro = st.session_state[clave_pq] == "otra"
-
-    # Todos los campos: key estable sembrada desde el almacén, SIN value= (ver explicación en CAMPOS_INPUT)
-    with st.form("formulario_datos"):
-        st.markdown("**Tus datos (quien firma y presenta)**")
-        nombre = st.text_input("Nombre completo *", key=sembrar("nombre"))
-        cedula = st.text_input("Número de cédula *", key=sembrar("cedula"), help="Solo números.")
-        direccion = st.text_input("Dirección o correo electrónico de notificación *", key=sembrar("direccion"))
-        ciudad = st.text_input("Ciudad o municipio *", key=sembrar("ciudad"), placeholder="Ej: Medellín")
-
-        afectado_nombre = afectado_cedula = parentesco = motivo_agencia = ""
-        if para_otro:
-            st.markdown("**Datos de la persona afectada**")
-            afectado_nombre = st.text_input("Nombre completo de la persona afectada *", key=sembrar("afectado_nombre"))
-            afectado_cedula = st.text_input("Cédula de la persona afectada (si la tienes)", key=sembrar("afectado_cedula"))
-            parentesco = st.text_input("Tu relación con ella *", key=sembrar("parentesco"), placeholder="Ej: nieto, hija, cuidador")
-            if es_tutela:
-                motivo_agencia = st.text_input(
-                    "¿Por qué ella no puede presentar la tutela por sí misma? *",
-                    key=sembrar("motivo_agencia"), placeholder="Ej: su estado de salud se lo impide",
-                    help="La ley permite que otra persona actúe como 'agente oficioso' cuando el titular no puede defenderse solo.",
-                )
-
-        etiqueta = "Entidad o persona contra quien va la tutela *" if es_tutela else caso["entidad_label"] + (" *" if caso["entidad_requerida"] else "")
-        entidad = st.text_input(etiqueta, key=sembrar("entidad"))
-
-        hechos = st.text_area(
-            "Revisa y completa tu relato *", key=sembrar("hechos_form", st.session_state["relato"]), height=200,
-            help="Es el mismo relato del paso anterior. Agrega lo que falte (fechas, nombres, números de radicado).",
-        )
-        usar_ia = st.checkbox(
-            "Usar inteligencia artificial para redactar formalmente los hechos y las pretensiones",
-            key=sembrar("usar_ia", True),
-            help="Solo se envía el texto del relato (sin tu nombre ni tu cédula).",
-        )
-        juramento = True
-        if es_tutela:
-            juramento = st.checkbox(
-                "Declaro bajo la gravedad del juramento que no he presentado otra tutela por los mismos hechos y derechos *",
-                key=sembrar("juramento", False),
-            )
-        st.caption("Los campos con * son obligatorios. No guardamos tus datos en ningún servidor.")
-        enviado = st.form_submit_button("Generar Borrador Legal", type="primary", use_container_width=True)
-
-    if enviado:
-        guardar_inputs()  # todo lo escrito se conserva tal cual, aunque haya errores de validación
-        cedula_limpia = re.sub(r"[.\s]", "", cedula)
-        datos = {
-            "nombre": nombre, "cedula": cedula_limpia, "direccion": direccion, "ciudad": ciudad, "entidad": entidad,
-            "hechos": hechos, "usar_ia": usar_ia, "para_quien": st.session_state[clave_pq],
-            "afectado_nombre": afectado_nombre, "afectado_cedula": re.sub(r"[.\s]", "", afectado_cedula),
-            "parentesco": parentesco, "motivo_agencia": motivo_agencia, "juramento": juramento,
-        }
-        st.session_state["datos"] = datos
-        st.session_state["relato"] = hechos
-        st.session_state["almacen"]["relato"] = hechos  # si vuelve al paso del relato, verá la versión editada
-
-        errores = []
-        if len(nombre.strip().split()) < 2:
-            errores.append("Escribe tu nombre completo (nombre y apellido).")
-        if not (cedula_limpia.isdigit() and 5 <= len(cedula_limpia) <= 12):
-            errores.append("La cédula debe contener solo números (entre 5 y 12 dígitos).")
-        if not direccion.strip():
-            errores.append("Indica una dirección o correo de notificación.")
-        if not ciudad.strip():
-            errores.append("Indica la ciudad o municipio.")
-        if (caso["entidad_requerida"] or es_tutela) and not entidad.strip():
-            errores.append("Indica la entidad o persona contra quien va el trámite.")
-        if para_otro and (len(afectado_nombre.strip().split()) < 2 or not parentesco.strip()):
-            errores.append("Indica el nombre completo de la persona afectada y tu relación con ella.")
-        if para_otro and es_tutela and not motivo_agencia.strip():
-            errores.append("Explica por qué la persona afectada no puede presentar la tutela por sí misma.")
-        if len(hechos.strip()) < 30:
-            errores.append("Describe los hechos con más detalle (mínimo 2 o 3 frases).")
-        elif not relato_parece_valido(hechos):
-            errores.append("El relato no se entiende. Cuenta qué pasó, cuándo y dónde, con frases claras.")
-        if es_tutela and not juramento:
-            errores.append("Debes aceptar la declaración bajo juramento para presentar la tutela.")
-
-        if errores:
-            for e in errores:
-                st.error(e)  # los campos se quedan exactamente como el usuario los dejó
-        else:
-            with st.spinner("Redactando tu documento..."):
-                hechos_f, pret_f, estado = redactar_documento(mec_id, caso_id, datos)
-            st.session_state["estado_redaccion"] = estado
-            st.session_state["borrador"] = generar_borrador(
-                mec_id, caso_id, datos, hechos_f, pret_f, st.session_state["analisis"]
-            )
-            st.session_state["paso"] = "documento"
-            nueva_generacion()
-            st.rerun()
-
-    st.button("⬅️ Volver a la asesoría", key="volver_capsula", on_click=ir_a, kwargs={"paso": "capsula"})
-
-
-def vista_documento():
-    """PASO 6: Documento editable, descarga, lista de chequeo y reinicio."""
-    caso_id = st.session_state["caso"]
-    caso = CASOS[caso_id]
-    mec_id = st.session_state["mecanismo"]
-    mec = MECANISMOS[mec_id]
-    estado = st.session_state["estado_redaccion"]
-    analisis = st.session_state["analisis"]
-
-    st.header("📄 Tu borrador está listo")
-    st.caption(f"{mec['nombre']}  |  Urgencia: {ETIQUETA_NIVEL[analisis['nivel']]}")
-
-    if analisis["riesgo_vital"] or analisis["nivel"] == "CRITICA":
-        st.error("🚨 " + (analisis["alerta"] or ALERTA_VITAL))
-
-    if estado == "ia":
-        st.success(
-            "Los **hechos y las pretensiones** fueron redactados con ayuda de IA. **Léelos con cuidado**: confirma que "
-            "no cambió ni inventó ningún dato y completa las marcas [COMPLETAR: ...]."
-        )
-    elif estado == "omitida":
-        st.info("Usaste tu relato original (sin IA) y las pretensiones estándar del catálogo. Puedes editarlo aquí mismo.")
-    elif estado == "limite":
-        st.warning("Se alcanzó el límite de usos de IA en esta sesión. Se usó tu relato original y las pretensiones estándar.")
-    elif estado == "sin_clave":
-        st.warning("La IA no está configurada (falta el secreto GEMINI_API_KEY). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
-    else:
-        causa = CAUSAS_IA.get(st.session_state.get("causa_redaccion"), "causa desconocida")
-        st.warning(f"No fue posible usar la IA en este momento ({causa}). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
-        st.button("🔁 Reintentar con IA (reemplaza el texto actual)", key="reintentar_redaccion", on_click=reintentar_redaccion)
-
-    texto = st.text_area("Borrador del documento (editable)", key="borrador", height=560)
-
-    if "[COMPLETAR" in texto:
-        st.error("El documento aún tiene marcas [COMPLETAR: ...]. Reemplázalas con los datos reales antes de imprimir.")
-
-    with st.expander("Ver el relato original que escribiste"):
-        st.write(st.session_state["datos"].get("hechos", ""))
-
-    st.download_button(
-        "⬇️ Descargar en texto plano (.txt)", data=texto.encode("utf-8"),
-        file_name=f"borrador_{mec_id.lower()}_{caso_id}.txt", mime="text/plain",
-        use_container_width=True, type="primary",
-    )
-
-    st.subheader("✅ Lista de chequeo de radicación")
-    for i, item in enumerate(lista_chequeo(mec_id, caso_id)):
-        st.checkbox(item, key=f"chk_{mec_id}_{caso_id}_{i}")
-
-    st.warning(f"**Si hay omisión o silencio:** {mec['omision']}.")
-
-    st.divider()
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.button("✏️ Editar mis datos", key="editar_datos", use_container_width=True, on_click=ir_a, kwargs={"paso": "formulario"})
-    with col_b:
-        st.button("🏠 Nueva consulta", key="nueva_consulta", use_container_width=True, on_click=reiniciar)
-
-
-# =============================================================================
-# 9. PROGRAMA PRINCIPAL
-# =============================================================================
-def main():
-    iniciar_estado()
-
-    with st.sidebar:
-        st.markdown("### ⚖️ Tinterillo Digital")
-        st.caption(AVISO_LEGAL)
-        if ia_configurada():
-            st.success("🤖 IA (Gemini) activa", icon=None)
-        else:
-            st.warning("⚙️ IA no configurada: la app funciona en modo reglas.")
-        if obtener_secret("DEBUG_IA", False):
-            # Panel de diagnóstico: solo aparece si agregas DEBUG_IA = true en los Secrets
-            st.markdown("**🔧 Diagnóstico de IA**")
-            if st.button("Probar conexión con Gemini", key="probar_ia", use_container_width=True):
-                texto_prueba, est = llamar_ia("Responde únicamente con un objeto JSON.", 'Devuelve exactamente: {"ok": true}')
-                if est == "ok":
-                    st.success(f"Conexión OK con el modelo {st.session_state['modelo_usado']}.")
-                else:
-                    st.error(f"Falló ({est}): " + CAUSAS_IA.get(st.session_state.get("causa_ia"), "sin detalle"))
-            if st.session_state.get("ultimo_error_ia"):
-                st.code(st.session_state["ultimo_error_ia"], language=None)
-        st.button("🔄 Empezar de nuevo", key="reiniciar_sidebar", use_container_width=True, on_click=reiniciar)
-
-    indicador_progreso()
-
-    vistas = {
-        "menu": vista_menu, "submenu": vista_submenu, "relato": vista_relato,
-        "capsula": vista_capsula, "formulario": vista_formulario, "documento": vista_documento,
-    }
-    vistas[st.session_state["paso"]]()
-
-
-if __name__ == "__main__":
-    main()
+        anexos.append("Prueba del parentesco o autorización de la persona afectada, si la hay (
