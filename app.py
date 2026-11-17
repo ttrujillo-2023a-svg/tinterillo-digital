@@ -12,13 +12,20 @@ DISEÑO HÍBRIDO (importante para la precisión legal):
   * Red de seguridad: un triaje por palabras clave (sin IA) corre siempre en paralelo y puede
     ESCALAR la urgencia si la IA se queda corta. Si la IA falla, la app sigue con ese triaje.
 
+DISEÑO VISUAL (v2):
+  * Estilo jurídico clásico: azul de Prusia, dorado, borgoña y fondo lino (ver CSS_GLOBAL).
+  * Animaciones en HTML/CSS/SVG puro (sin archivos externos): mazo del juez (análisis y
+    dictamen) y pluma sobre pergamino (redacción del documento).
+  * Requiere Streamlit >= 1.39 (usa st.container(key=...) para estilizar la cápsula).
+
 Flujo: menu -> submenu -> relato -> capsula (asesoría dinámica) -> formulario -> documento
 
 Ejecutar en local:  streamlit run app.py
 Secretos:           st.secrets["GEMINI_API_KEY"]  (opcional: "GEMINI_MODEL", "DEBUG_IA")
+Tema:               .streamlit/config.toml
 """
 
-import html
+import html as _html
 import json
 import re
 import time
@@ -1476,191 +1483,324 @@ def lista_chequeo(mec_id, caso_id):
 
 
 # =============================================================================
-# 7B. DISEÑO VISUAL (identidad de despacho jurídico clásico)
-#     Solo presentación: CSS y componentes HTML. No contiene lógica de negocio.
-#     Paleta: azul de Prusia #1B2A41 · dorado #B08D57 · borgoña #7A1E2E · lino #F3EEE3
-#             blanco hueso #FAF8F5 · gris plomo #5A6B7D · tinta #162235
+# 7B. ESTILOS (CSS) Y ANIMACIONES (HTML/CSS/SVG PURO)
+#     Solo presentación: no toca la lógica de estados, validaciones ni llamadas a Gemini.
 # =============================================================================
-ESTILOS_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-:root{--azul:#1B2A41;--dorado:#B08D57;--borgona:#7A1E2E;--lino:#F3EEE3;--hueso:#FAF8F5;--plomo:#5A6B7D;--tinta:#162235;}
+# Paleta: marino #1B2A41 | dorado #B08D57 | borgoña #7A1E2E | lino #F3EEE3 | marfil #FFFFFF | plomo #5A6B7D
+
+# Insignias de plazo (resumen visual; el detalle legal completo sigue saliendo del catálogo MECANISMOS)
+BADGE_PLAZO = {
+    "PETICION_INDIVIDUAL": "⏳ 15 días hábiles",
+    "PETICION_INTERES_GENERAL": "⏳ 15 días hábiles",
+    "ACCION_POPULAR_REQUISITO": "⏳ 15 días · Art. 144 CPACA",
+    "RECLAMACION_INDEMNIZACION": "⏳ 15 días hábiles",
+    "RECLAMO_SERVICIOS_PUBLICOS": "⏳ 15 días hábiles",
+    "QUEJA_CONVIVENCIA": "⏳ 15 días hábiles",
+    "AUDIENCIA_COMPARENDO": "⏳ Plazo corto · revisa tu comparendo",
+    "TUTELA": "🚨 10 días hábiles · Acción de Tutela",
+}
+
+# Texto del sello del dictamen
+SELLO_MECANISMO = {
+    "PETICION_INDIVIDUAL": "DERECHO DE PETICIÓN",
+    "PETICION_INTERES_GENERAL": "PETICIÓN DE INTERÉS GENERAL",
+    "ACCION_POPULAR_REQUISITO": "SOLICITUD PREVIA DE ACCIÓN POPULAR",
+    "RECLAMACION_INDEMNIZACION": "RECLAMACIÓN DE INDEMNIZACIÓN",
+    "RECLAMO_SERVICIOS_PUBLICOS": "RECLAMO DE SERVICIOS PÚBLICOS",
+    "QUEJA_CONVIVENCIA": "QUEJA DE CONVIVENCIA",
+    "AUDIENCIA_COMPARENDO": "SOLICITUD DE AUDIENCIA",
+    "TUTELA": "ACCIÓN DE TUTELA",
+}
+
+CSS_GLOBAL = """
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&display=swap');
+
+:root {
+  --marino: #1B2A41;
+  --dorado: #B08D57;
+  --borgona: #7A1E2E;
+  --lino: #F3EEE3;
+  --marfil: #FFFFFF;
+  --plomo: #5A6B7D;
+  --borde: rgba(90, 107, 125, 0.45);
+  --sombra: 0 4px 12px rgba(27, 42, 65, 0.08);
+}
+
 /* ---------- Base ---------- */
-.stApp{background:var(--lino);color:var(--tinta);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;}
-[data-testid="stHeader"]{background:transparent;}
-.block-container{max-width:880px;padding-top:1.4rem;padding-bottom:2.5rem;}
-footer{visibility:hidden;}
-h1,h2,h3,h4{font-family:Georgia,'Times New Roman',serif!important;color:var(--azul)!important;letter-spacing:.005em;}
-h2{border-bottom:1px solid var(--dorado);padding-bottom:.35rem;}
-a{color:var(--azul);}
-div[data-testid="stWidgetLabel"] p{font-weight:600;color:var(--azul);}
-div[data-testid="stCaptionContainer"]{color:var(--plomo);}
-hr{border-color:rgba(176,141,87,.55)!important;}
-/* ---------- Encabezado institucional ---------- */
-.hero{display:flex;align-items:center;gap:1.1rem;background:var(--azul);color:var(--lino);padding:1.25rem 1.6rem;border-bottom:5px solid var(--dorado);border-radius:8px;box-shadow:0 6px 18px rgba(27,42,65,.25);margin-bottom:1.1rem;}
-.hero-emblema{flex:0 0 auto;width:58px;height:58px;border-radius:50%;border:2px solid var(--dorado);background:rgba(176,141,87,.14);display:flex;align-items:center;justify-content:center;font-size:1.9rem;}
-.hero-texto{flex:1 1 auto;}
-.hero-titulo{font-family:Georgia,'Times New Roman',serif;font-size:2rem;font-weight:700;line-height:1.1;color:#FFFFFF;}
-.hero-sub{font-family:'Inter',sans-serif;font-size:.9rem;color:#E5D3B0;margin-top:.25rem;letter-spacing:.03em;}
-.hero-sello{flex:0 0 auto;text-align:right;font-family:Georgia,serif;font-style:italic;font-size:.95rem;line-height:1.3;color:var(--dorado);border-left:1px solid rgba(176,141,87,.6);padding-left:1rem;}
-/* ---------- Botones: tarjetas de selección ---------- */
-button[kind="secondary"],button[data-testid="stBaseButton-secondary"]{width:100%;justify-content:flex-start!important;text-align:left!important;background:var(--hueso)!important;color:var(--tinta)!important;border:1px solid rgba(90,107,125,.3)!important;border-left:6px solid var(--azul)!important;border-radius:6px!important;padding:.8rem 1.1rem!important;font-weight:600!important;box-shadow:0 1px 3px rgba(27,42,65,.08)!important;transition:all .2s ease!important;}
-button[kind="secondary"]:hover,button[data-testid="stBaseButton-secondary"]:hover{background:#FFFFFF!important;border-left-color:var(--dorado)!important;color:var(--azul)!important;transform:translateX(3px);box-shadow:0 4px 12px rgba(27,42,65,.16)!important;}
-button[kind="secondary"] p,button[data-testid="stBaseButton-secondary"] p{text-align:left!important;margin:0!important;color:inherit!important;}
-button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:var(--azul)!important;color:#FFFFFF!important;border:1px solid var(--azul)!important;border-left:6px solid var(--dorado)!important;border-radius:6px!important;padding:.8rem 1.1rem!important;font-weight:700!important;letter-spacing:.02em;box-shadow:0 2px 8px rgba(27,42,65,.28)!important;transition:all .2s ease!important;}
-button[kind="primary"]:hover,button[data-testid="stBaseButton-primary"]:hover{background:var(--dorado)!important;color:var(--azul)!important;border-color:var(--azul)!important;box-shadow:0 5px 14px rgba(27,42,65,.25)!important;}
-button[kind="primary"] p,button[data-testid="stBaseButton-primary"] p{color:inherit!important;margin:0!important;}
-div[data-testid="stDownloadButton"] button{background:var(--dorado)!important;color:var(--azul)!important;border:1px solid #8E6F40!important;border-left:6px solid var(--azul)!important;font-weight:700!important;}
-div[data-testid="stDownloadButton"] button:hover{background:var(--azul)!important;color:#FFFFFF!important;border-color:var(--azul)!important;}
-button:focus-visible{outline:3px solid rgba(176,141,87,.6)!important;outline-offset:2px;}
-/* ---------- Campos y formularios ---------- */
-div[data-baseweb="input"],div[data-baseweb="textarea"],div[data-baseweb="select"]>div{background:#FFFFFF!important;border:1px solid rgba(90,107,125,.45)!important;border-radius:6px!important;}
-div[data-baseweb="input"]:focus-within,div[data-baseweb="textarea"]:focus-within{border-color:var(--dorado)!important;box-shadow:0 0 0 3px rgba(176,141,87,.28)!important;}
-.stTextInput input,.stTextArea textarea{color:var(--tinta)!important;}
-div[data-testid="stForm"]{background:var(--hueso)!important;border:1px solid rgba(90,107,125,.3)!important;border-top:4px solid var(--azul)!important;border-radius:8px!important;padding:1.3rem 1.5rem!important;box-shadow:0 3px 12px rgba(27,42,65,.08);}
-div[data-testid="stExpander"]{background:var(--hueso);border:1px solid rgba(90,107,125,.3)!important;border-radius:6px;}
-/* ---------- Tarjetas: concepto jurídico, urgencia y advertencia ---------- */
-.tarjeta{background:var(--hueso);color:var(--tinta);border:1px solid rgba(90,107,125,.28);border-left:6px solid var(--dorado);border-radius:6px;padding:1.1rem 1.4rem;margin:.6rem 0 1rem;box-shadow:0 2px 8px rgba(27,42,65,.09);line-height:1.62;}
-.tarjeta p{margin:.35rem 0 .75rem;}
-.tarjeta ul{margin:.3rem 0 .8rem 1.1rem;padding:0;}
-.tarjeta li{margin:.15rem 0;}
-.tj-titulo{font-family:Georgia,'Times New Roman',serif;font-size:.78rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dorado);border-bottom:1px solid rgba(176,141,87,.5);padding-bottom:.4rem;margin-bottom:.6rem;}
-.tarjeta-urgente{background:var(--borgona);color:#FFFFFF;border-left-color:#E8C9A0;box-shadow:0 4px 14px rgba(122,30,46,.35);}
-.tarjeta-urgente .tj-titulo{color:#F1D9B5;border-bottom-color:rgba(255,255,255,.35);}
-.tarjeta-advertencia{background:#FBF3F3;border-left-color:var(--borgona);}
-.tarjeta-advertencia .tj-titulo{color:var(--borgona);border-bottom-color:rgba(122,30,46,.35);}
-/* ---------- Alertas nativas de Streamlit (avisos y errores de validación) ---------- */
-div[data-testid="stAlert"]{background:var(--hueso)!important;border:1px solid rgba(90,107,125,.25)!important;border-left:5px solid var(--dorado)!important;border-radius:6px!important;box-shadow:0 1px 4px rgba(27,42,65,.08);}
-div[data-testid="stAlert"] *{color:var(--tinta)!important;}
-div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]){border-left-color:var(--borgona)!important;background:#F8EDEE!important;}
-div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]){border-left-color:#C08A2E!important;background:#FBF3E4!important;}
-div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]){border-left-color:var(--azul)!important;background:#EDF1F6!important;}
-/* ---------- Indicador de urgencia ---------- */
-.fila-urgencia{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin:.4rem 0 .6rem;}
-.etq-urgencia{font-size:.85rem;font-weight:600;color:var(--plomo);}
-.insignia{display:inline-block;padding:.25rem .85rem;border-radius:999px;font-weight:700;font-size:.82rem;letter-spacing:.04em;border:1px solid;}
-.insignia-critica{background:var(--borgona);color:#FFFFFF;border-color:var(--borgona);}
-.insignia-alta{background:#FBEFE0;color:#8A4B10;border-color:#C08A2E;}
-.insignia-media{background:#FBF6DF;color:#6B5A12;border-color:var(--dorado);}
-.insignia-baja{background:#E9F0EA;color:#2F5D3A;border-color:#6A9A75;}
-.sello-tutela{display:inline-block;padding:.25rem .8rem;border:2px solid var(--borgona);border-radius:4px;color:var(--borgona);font-family:Georgia,serif;font-weight:700;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;transform:rotate(-1.5deg);}
-/* ---------- Hoja de papel oficial (documento generado) ---------- */
-.st-key-hoja_papel{background:#FFFFFF;border:1px solid rgba(90,107,125,.35);border-top:6px solid var(--azul);border-radius:4px;padding:1rem 1.6rem 1.4rem;box-shadow:0 10px 28px rgba(27,42,65,.15),0 2px 4px rgba(27,42,65,.08);margin-bottom:1rem;}
-.st-key-hoja_papel textarea{font-family:Georgia,'Times New Roman',serif!important;font-size:1.02rem!important;line-height:1.75!important;color:var(--tinta)!important;background:#FFFFFF!important;}
-.st-key-hoja_papel div[data-baseweb="textarea"]{background:#FFFFFF!important;border:1px dashed rgba(176,141,87,.65)!important;border-radius:2px!important;}
-.membrete{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem;border-bottom:2px double var(--dorado);padding-bottom:.55rem;margin-bottom:.8rem;font-family:Georgia,serif;font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--azul);}
-.membrete span:last-child{color:var(--plomo);font-style:italic;text-transform:none;letter-spacing:.02em;}
-/* ---------- Barra de progreso (dorado) ---------- */
-div[data-testid="stProgress"] div[role="progressbar"]{background:rgba(27,42,65,.14)!important;}
-div[data-testid="stProgress"] div[role="progressbar"]>div>div,div[data-testid="stProgress"] div[role="progressbar"]>div{background-color:var(--dorado)!important;}
-.stProgress>div>div>div>div{background-color:var(--dorado)!important;}
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: var(--lino) !important; }
+[data-testid="stHeader"] { background: transparent !important; }
+.block-container { max-width: 860px; padding-top: 1.4rem; padding-bottom: 4rem; }
+html, body, .stApp, [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li,
+label, input, textarea, [data-testid="stCaptionContainer"] { font-family: 'Inter', 'Lato', sans-serif; }
+[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li { line-height: 1.65; }
+h1, h2, h3, h4, [data-testid="stHeading"] h1, [data-testid="stHeading"] h2, [data-testid="stHeading"] h3 {
+  font-family: 'Playfair Display', 'Merriweather', Georgia, serif !important; color: var(--marino) !important; letter-spacing: 0.2px;
+}
+h2, [data-testid="stHeading"] h2 { border-bottom: 2px solid var(--dorado); padding-bottom: 0.35rem; }
+hr { border-color: var(--dorado) !important; opacity: 0.55; }
+
 /* ---------- Barra lateral ---------- */
-section[data-testid="stSidebar"]{background:var(--hueso)!important;border-right:3px solid var(--dorado);}
-/* ---------- Pie de página ---------- */
-.pie{margin-top:2.2rem;padding:1rem 1.2rem;border-top:2px solid var(--dorado);text-align:center;font-size:.82rem;line-height:1.6;color:var(--plomo);}
-.pie strong{color:var(--azul);}
-/* ---------- Móvil ---------- */
-@media(max-width:640px){.hero{flex-direction:column;text-align:center;padding:1.1rem;}.hero-sello{display:none;}.hero-titulo{font-size:1.6rem;}.tarjeta{padding:.9rem 1rem;}.st-key-hoja_papel{padding:.8rem 1rem 1rem;}}
+[data-testid="stSidebar"] { background: #E9E1CF !important; border-right: 3px solid var(--dorado); }
+
+/* ---------- Progreso ---------- */
+[data-testid="stProgress"] [role="progressbar"] > div, [data-testid="stProgress"] div[data-baseweb="progress-bar"] > div > div { background-color: var(--dorado) !important; }
+
+/* ---------- Membrete institucional ---------- */
+.membrete { position: relative; overflow: hidden; background: var(--marino); border-radius: 6px 6px 0 0; padding: 1.5rem 1.7rem 1.2rem;
+  border-bottom: 4px solid var(--dorado); box-shadow: var(--sombra); margin-bottom: 1.1rem; }
+.membrete::before { content: ""; position: absolute; right: -40px; top: -40px; width: 170px; height: 170px; border: 1px solid rgba(176, 141, 87, 0.45); border-radius: 50%; }
+.membrete::after { content: ""; position: absolute; right: -10px; top: -10px; width: 110px; height: 110px; border: 1px solid rgba(176, 141, 87, 0.30); border-radius: 50%; }
+.membrete .titulo { position: relative; z-index: 1; font-family: 'Playfair Display', Georgia, serif; font-size: 2.1rem; font-weight: 700; color: #FFFFFF; line-height: 1.15; }
+.membrete .subtitulo { position: relative; z-index: 1; margin-top: 0.3rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 2.4px; text-transform: uppercase; color: #D9C7A3; }
+.membrete .lema { position: relative; z-index: 1; margin-top: 0.55rem; font-size: 0.92rem; color: #E8E1D0; font-style: italic; }
+
+/* ---------- Tarjetas de selección (menús) ---------- */
+[class*="st-key-btn_cat_"] button, [class*="st-key-btn_sub_"] button {
+  background: var(--marfil) !important; color: var(--marino) !important; border: 1px solid var(--borde) !important;
+  border-left: 6px solid var(--dorado) !important; border-radius: 4px !important; box-shadow: var(--sombra);
+  padding: 0.95rem 1.2rem !important; min-height: 3.3rem; transition: all 0.25s ease;
+}
+[class*="st-key-btn_cat_"] button div, [class*="st-key-btn_sub_"] button div { justify-content: flex-start !important; text-align: left !important; width: 100%; }
+[class*="st-key-btn_cat_"] button p, [class*="st-key-btn_sub_"] button p { color: inherit !important; font-weight: 600; font-size: 1.02rem; text-align: left; }
+[class*="st-key-btn_cat_"] button:hover, [class*="st-key-btn_sub_"] button:hover {
+  background: var(--marino) !important; color: #FFFFFF !important; border-color: var(--marino) !important; border-left-color: var(--dorado) !important;
+  transform: translateX(5px); box-shadow: 0 6px 16px rgba(27, 42, 65, 0.22);
+}
+
+/* ---------- Botones generales ---------- */
+[data-testid="stBaseButton-secondary"] { background: var(--marfil); color: var(--marino); border: 1px solid var(--marino); border-radius: 4px; font-weight: 600; transition: all 0.2s ease; }
+[data-testid="stBaseButton-secondary"]:hover { background: #FBF6E9; color: var(--marino); border-color: var(--dorado); box-shadow: 0 0 0 2px rgba(176, 141, 87, 0.35); }
+[data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primaryFormSubmit"], [data-testid="stDownloadButton"] button {
+  background: var(--marino) !important; color: #FFFFFF !important; border: 1px solid var(--marino) !important; border-radius: 4px; font-weight: 600; letter-spacing: 0.3px; transition: all 0.2s ease;
+}
+[data-testid="stBaseButton-primary"] p, [data-testid="stBaseButton-primaryFormSubmit"] p, [data-testid="stDownloadButton"] button p { color: inherit !important; }
+[data-testid="stBaseButton-primary"]:hover, [data-testid="stBaseButton-primaryFormSubmit"]:hover, [data-testid="stDownloadButton"] button:hover {
+  background: var(--dorado) !important; border-color: var(--dorado) !important; color: var(--marino) !important; box-shadow: 0 4px 12px rgba(176, 141, 87, 0.45);
+}
+
+/* ---------- Formularios y campos ---------- */
+[data-testid="stForm"] { background: var(--marfil); border: 1px solid var(--borde); border-top: 4px solid var(--dorado); border-radius: 6px; box-shadow: var(--sombra); padding: 1.4rem; }
+[data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="base-input"] { border-radius: 4px !important; }
+[data-baseweb="input"] > div, [data-baseweb="textarea"] > div { background: #FFFDF8 !important; border: 1px solid var(--borde) !important; border-radius: 4px !important; }
+[data-baseweb="input"]:focus-within > div, [data-baseweb="textarea"]:focus-within > div { border-color: var(--dorado) !important; box-shadow: 0 0 0 2px rgba(176, 141, 87, 0.30); }
+[data-testid="stExpander"] { background: var(--marfil); border: 1px solid var(--borde); border-radius: 4px; box-shadow: var(--sombra); }
+[data-testid="stAlert"] { border-radius: 4px; box-shadow: var(--sombra); }
+
+/* ---------- Cápsula: Dictamen Jurídico ---------- */
+.st-key-dictamen_normal, .st-key-dictamen_critico {
+  background: var(--marfil); border: 1px solid var(--borde); border-left: 9px solid var(--marino); border-radius: 4px;
+  box-shadow: var(--sombra); padding: 1.3rem 1.6rem 1.1rem; margin: 0.6rem 0 1.1rem;
+}
+.st-key-dictamen_critico { border-left-color: var(--borgona); }
+.dictamen-cab { font-family: 'Playfair Display', Georgia, serif; font-size: 1.08rem; font-weight: 700; letter-spacing: 2.2px; text-transform: uppercase; color: var(--marino);
+  border-bottom: 1px solid var(--dorado); padding-bottom: 0.5rem; margin-bottom: 0.7rem; }
+.st-key-dictamen_critico .dictamen-cab { color: var(--borgona); }
+.insignias { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.3rem 0 0.9rem; }
+.insignia { display: inline-block; padding: 0.28rem 0.8rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; background: var(--lino); border: 1px solid var(--dorado); color: var(--marino); }
+.insignia.marino { background: var(--marino); border-color: var(--marino); color: #FFFFFF; }
+.insignia.dorada { background: var(--dorado); border-color: var(--dorado); color: #FFFFFF; }
+.insignia.critica { background: var(--borgona); border-color: var(--borgona); color: #FFFFFF; }
+
+.alerta-vital { background: #FBF1F2; border: 1px solid var(--borgona); border-left: 8px solid var(--borgona); color: #5A1521; padding: 0.9rem 1.1rem;
+  border-radius: 4px; margin: 0.6rem 0 1rem; line-height: 1.55; animation: pulso-borgona 2.6s ease-in-out infinite; }
+@keyframes pulso-borgona { 0%, 100% { box-shadow: 0 0 0 0 rgba(122, 30, 46, 0.0); } 50% { box-shadow: 0 0 0 5px rgba(122, 30, 46, 0.18); } }
+
+/* ---------- Vista previa del documento (hoja de papel) ---------- */
+.hoja-cab { max-width: 820px; margin: 0.4rem auto 0; padding: 0.35rem 0.9rem; background: var(--marino); color: #E8E1D0; font-size: 0.78rem;
+  letter-spacing: 1.6px; text-transform: uppercase; border-radius: 4px 4px 0 0; border-bottom: 3px solid var(--dorado); }
+.st-key-borrador { max-width: 820px; margin: 0 auto; }
+.st-key-borrador [data-baseweb="textarea"] > div { background: #FFFEFB !important; border: 1px solid #CFC7B4 !important; border-radius: 0 0 2px 2px !important;
+  box-shadow: 0 8px 22px rgba(27, 42, 65, 0.16), inset 0 0 0 7px #FFFFFF, inset 0 0 0 8px #E6DFCB; }
+.st-key-borrador textarea { font-family: 'Merriweather', 'Times New Roman', Georgia, serif !important; font-size: 0.9rem !important; line-height: 1.8 !important;
+  color: #1E1E1E !important; padding: 2.2rem 2.6rem !important; background: transparent !important; }
+
+/* ---------- Escenas animadas ---------- */
+.escena { display: flex; flex-direction: column; align-items: center; text-align: center; background: var(--marfil); border: 1px solid var(--borde);
+  border-top: 4px solid var(--dorado); border-radius: 6px; box-shadow: var(--sombra); padding: 1.3rem 1rem 1.2rem; margin: 1rem 0; }
+.escena svg { width: 220px; max-width: 70%; height: auto; overflow: visible; }
+.mensajes { position: relative; height: 2.7em; width: 100%; margin-top: 0.7rem; }
+.msg { position: absolute; left: 0; right: 0; opacity: 0; font-weight: 600; color: var(--marino); animation: msg-ciclo 9s ease-in-out infinite backwards; }
+.m1 { animation-delay: 0s; } .m2 { animation-delay: 3s; } .m3 { animation-delay: 6s; }
+@keyframes msg-ciclo { 0% { opacity: 0; transform: translateY(6px); } 6%, 30% { opacity: 1; transform: none; } 36%, 100% { opacity: 0; transform: translateY(-6px); } }
+
+/* Mazo del juez */
+.mazo-delibera { transform-origin: 150px 89px; animation: mazo-delibera 2s ease-in-out infinite; }
+@keyframes mazo-delibera { 0%, 100% { transform: rotate(32deg); } 50% { transform: rotate(10deg); } }
+.mazo-golpe { transform-origin: 150px 89px; animation: mazo-golpe 1.1s cubic-bezier(0.5, 0, 0.8, 0.4) both; }
+@keyframes mazo-golpe { 0% { transform: rotate(38deg); } 45% { transform: rotate(38deg); } 60% { transform: rotate(0deg); } 68% { transform: rotate(7deg); } 76% { transform: rotate(0deg); } 100% { transform: rotate(0deg); } }
+.onda { transform-box: fill-box; transform-origin: center; opacity: 0; animation: onda 0.75s ease-out 0.66s forwards; }
+.onda2 { animation-delay: 0.8s; }
+@keyframes onda { 0% { opacity: 0.95; transform: scale(0.3); } 100% { opacity: 0; transform: scale(2.8); } }
+
+/* Sello del dictamen */
+.sello { display: inline-block; margin-top: 0.5rem; padding: 0.55rem 1.3rem; border: 3px double var(--marino); border-radius: 6px; color: var(--marino);
+  font-family: 'Playfair Display', Georgia, serif; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; font-size: 1.05rem;
+  transform: rotate(-3deg); animation: sello-entra 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 0.75s both; }
+.sello.critico { border-color: var(--borgona); color: var(--borgona); }
+@keyframes sello-entra { 0% { opacity: 0; transform: scale(2.3) rotate(-12deg); } 100% { opacity: 1; transform: scale(1) rotate(-3deg); } }
+
+/* Pluma sobre pergamino */
+.pluma { animation: pluma-recorre 7s linear infinite; }
+.linea { transform-box: fill-box; transform-origin: left center; transform: scaleX(0); }
+.mensaje-pluma { margin-top: 0.7rem; font-weight: 600; color: var(--marino); animation: latido 2.4s ease-in-out infinite; }
+@keyframes latido { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .escena *, .alerta-vital { animation-duration: 0.01s !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; }
+  .msg.m1 { opacity: 1; }
+}
+@media (max-width: 640px) {
+  .membrete .titulo { font-size: 1.55rem; }
+  .membrete { padding: 1.1rem 1.1rem 0.9rem; }
+  .st-key-borrador textarea { padding: 1.2rem 1.1rem !important; }
+  .sello { font-size: 0.9rem; }
+}
 """
 
+# Líneas de texto que aparecen sobre el pergamino: (posición vertical, ancho)
+LINEAS_PLUMA = [(38, 190), (56, 170), (74, 200), (92, 130), (110, 175)]
+_CICLO_PLUMA = 7  # segundos
 
-def aplicar_estilos():
-    """Inyecta el CSS global (se llama una vez por ejecución, al inicio de main)."""
-    css = re.sub(r"\n\s*\n", "\n", ESTILOS_CSS.strip())
-    st.markdown("<style>" + css + "</style>", unsafe_allow_html=True)
+
+def css_pluma():
+    """Genera los keyframes de las líneas que se escriben y del recorrido de la pluma (ciclo de 7 s)."""
+    reglas = []
+    recorrido = [f"0% {{ transform: translate(30px, {LINEAS_PLUMA[0][0]}px); }}"]
+    for i, (y, w) in enumerate(LINEAS_PLUMA):
+        inicio = 6 + i * 16
+        fin = inicio + 14
+        reglas.append(
+            f".l{i} {{ animation: lin{i} {_CICLO_PLUMA}s linear infinite; }} "
+            f"@keyframes lin{i} {{ 0%, {inicio}% {{ transform: scaleX(0); opacity: 1; }} "
+            f"{fin}%, 94% {{ transform: scaleX(1); opacity: 1; }} "
+            f"100% {{ transform: scaleX(1); opacity: 0; }} }}"
+        )
+        recorrido.append(f"{inicio}% {{ transform: translate(30px, {y}px); }}")
+        recorrido.append(f"{fin}% {{ transform: translate({30 + w}px, {y}px); }}")
+    y_fin, w_fin = LINEAS_PLUMA[-1]
+    recorrido.append(f"94%, 100% {{ transform: translate({30 + w_fin}px, {y_fin}px); }}")
+    reglas.append("@keyframes pluma-recorre { " + " ".join(recorrido) + " }")
+    return " ".join(reglas)
+
+
+def _compactar(texto):
+    """Une el HTML/CSS en una sola línea: Markdown rompe los bloques HTML con líneas en blanco o sangrías."""
+    return " ".join(linea.strip() for linea in texto.splitlines() if linea.strip())
+
+
+def mostrar_html(texto, contenedor=None):
+    """Renderiza HTML compactado. Si se pasa un st.empty() como contenedor, lo dibuja ahí."""
+    destino = contenedor if contenedor is not None else st
+    destino.markdown(_compactar(texto), unsafe_allow_html=True)
+
+
+def inyectar_estilos():
+    st.markdown("<style>" + _compactar(CSS_GLOBAL) + " " + css_pluma() + "</style>", unsafe_allow_html=True)
 
 
 def encabezado_institucional():
-    """Banner superior: azul de Prusia, borde inferior dorado y emblema de la balanza."""
-    st.markdown(
-        '<div class="hero">'
-        '<div class="hero-emblema">⚖️</div>'
-        '<div class="hero-texto"><div class="hero-titulo">Tinterillo Digital</div>'
-        '<div class="hero-sub">Orientación jurídica comunitaria · Colombia</div></div>'
-        '<div class="hero-sello">Tu derecho,<br>paso a paso</div>'
-        "</div>",
-        unsafe_allow_html=True,
+    """Banner tipo membrete de bufete, con línea dorada inferior."""
+    mostrar_html("""
+    <div class="membrete">
+      <div class="titulo">⚖️ Tinterillo Digital</div>
+      <div class="subtitulo">Orientación jurídica ciudadana · Colombia</div>
+      <div class="lema">Analizamos la urgencia de tu caso, te indicamos la vía legal y dejamos listo tu borrador.</div>
+    </div>
+    """)
+
+
+def alerta_html(texto):
+    """Alerta borgoña. Escapa el texto (puede venir de la IA) y convierte **negritas** a <b>."""
+    seguro = _html.escape(texto)
+    seguro = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", seguro)
+    return f'<div class="alerta-vital">{seguro}</div>'
+
+
+def _svg_mazo(clase, con_impacto):
+    """Mazo de juez sobre su bloque. clase: 'mazo-delibera' (se balancea) o 'mazo-golpe' (golpea una vez)."""
+    ondas = ""
+    if con_impacto:
+        ondas = (
+            '<circle class="onda" cx="70" cy="108" r="12" fill="none" stroke="#B08D57" stroke-width="3"/>'
+            '<circle class="onda onda2" cx="70" cy="108" r="12" fill="none" stroke="#7A1E2E" stroke-width="2"/>'
+        )
+    return (
+        '<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mazo de juez">'
+        '<ellipse cx="70" cy="140" rx="62" ry="5" fill="#1B2A41" opacity="0.12"/>'
+        '<rect x="14" y="122" width="112" height="12" rx="3" fill="#1B2A41"/>'
+        '<rect x="28" y="110" width="84" height="12" rx="3" fill="#B08D57"/>'
+        f'<g class="{clase}">'
+        '<rect x="90" y="84" width="66" height="10" rx="5" fill="#8C6D3F"/>'
+        '<circle cx="156" cy="89" r="7" fill="#B08D57"/>'
+        '<rect x="46" y="66" width="48" height="44" rx="6" fill="#1B2A41"/>'
+        '<rect x="46" y="66" width="8" height="44" rx="3" fill="#B08D57"/>'
+        '<rect x="86" y="66" width="8" height="44" rx="3" fill="#B08D57"/>'
+        '</g>' + ondas + '</svg>'
     )
 
 
-def pie_de_pagina():
-    st.markdown(
-        '<div class="pie">⚖️ <strong>Tinterillo Digital</strong><br>'
-        "Herramienta de orientación ciudadana; no reemplaza la asesoría de un abogado titulado.<br>"
-        "Las normas y los plazos pueden cambiar: verifica siempre la información vigente.</div>",
-        unsafe_allow_html=True,
+def html_juez_analizando():
+    """ANIMACIÓN 1a: mazo balanceándose mientras se analiza la gravedad del caso."""
+    return (
+        '<div class="escena">' + _svg_mazo("mazo-delibera", False) +
+        '<div class="mensajes">'
+        '<span class="msg m1">⚖️ El despacho está evaluando la gravedad jurídica de tu caso...</span>'
+        '<span class="msg m2">📚 Revisando los derechos fundamentales en juego...</span>'
+        '<span class="msg m3">🔎 Eligiendo el mecanismo legal más adecuado...</span>'
+        '</div></div>'
     )
 
 
-def _md_a_html(texto):
-    """
-    Convierte el markdown sencillo de las tarjetas (negritas, párrafos y viñetas) en HTML.
-    Primero ESCAPA todo el texto, así el contenido que venga de la IA nunca puede inyectar HTML.
-    """
-    seguro = html.escape(texto, quote=False)
-    seguro = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", seguro, flags=re.DOTALL)
-    salida = []
-    for bloque in re.split(r"\n\s*\n", seguro.strip()):
-        parrafo, items = [], []
-
-        def cerrar_parrafo():
-            if parrafo:
-                salida.append("<p>" + "<br>".join(parrafo) + "</p>")
-                parrafo.clear()
-
-        def cerrar_lista():
-            if items:
-                salida.append("<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
-                items.clear()
-
-        for linea in bloque.split("\n"):
-            t = linea.strip()
-            if t.startswith("- "):
-                cerrar_parrafo()
-                items.append(t[2:])
-            else:
-                cerrar_lista()
-                parrafo.append(t)
-        cerrar_parrafo()
-        cerrar_lista()
-    return "".join(salida)
-
-
-def tarjeta(tipo, contenido, titulo=None):
-    """
-    Tarjeta formal. tipo: "concepto" (dorado, asesoría), "urgente" (borgoña, riesgo vital)
-    o "advertencia" (borde borgoña, advertencia legal).
-    """
-    cabecera = f'<div class="tj-titulo">{html.escape(titulo)}</div>' if titulo else ""
-    st.markdown(
-        f'<div class="tarjeta tarjeta-{tipo}">{cabecera}{_md_a_html(contenido)}</div>',
-        unsafe_allow_html=True,
+def html_dictamen_listo(mec_id, critico):
+    """ANIMACIÓN 1b: martillazo de impacto y sello del mecanismo elegido."""
+    etiqueta = _html.escape(SELLO_MECANISMO.get(mec_id, MECANISMOS[mec_id]["nombre"].upper()))
+    clase = "sello critico" if (critico or mec_id == "TUTELA") else "sello"
+    return (
+        '<div class="escena">' + _svg_mazo("mazo-golpe", True) +
+        f'<div class="{clase}">¡DICTAMEN LISTO: {etiqueta}!</div></div>'
     )
 
 
-def insignia_urgencia(nivel, tutela=False):
-    """Etiqueta de nivel de urgencia; si el mecanismo es tutela, agrega el sello borgoña."""
-    sello = '<span class="sello-tutela">Acción de Tutela · Art. 86</span>' if tutela else ""
-    st.markdown(
-        '<div class="fila-urgencia"><span class="etq-urgencia">Nivel de urgencia detectado</span>'
-        f'<span class="insignia insignia-{nivel.lower()}">{html.escape(ETIQUETA_NIVEL[nivel])}</span>{sello}</div>',
-        unsafe_allow_html=True,
+def _svg_pluma():
+    lineas = "".join(
+        f'<rect class="linea l{i}" x="30" y="{y - 2}" width="{w}" height="4" rx="2" fill="#1B2A41"/>'
+        for i, (y, w) in enumerate(LINEAS_PLUMA)
+    )
+    return (
+        '<svg viewBox="0 0 260 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pluma escribiendo sobre pergamino">'
+        '<rect x="10" y="10" width="240" height="124" rx="8" fill="#FBF6E9" stroke="#B08D57" stroke-width="2"/>'
+        '<rect x="4" y="4" width="252" height="12" rx="6" fill="#D9C7A3"/>'
+        '<rect x="4" y="128" width="252" height="12" rx="6" fill="#D9C7A3"/>'
+        + lineas +
+        '<g class="pluma">'
+        '<path d="M0 0 L5 -9 L36 -40 L44 -32 L10 -3 Z" fill="#1B2A41"/>'
+        '<path d="M0 0 L5 -9 L10 -3 Z" fill="#B08D57"/>'
+        '<path d="M30 -34 L38 -42 L42 -38 L34 -30 Z" fill="#B08D57"/>'
+        '</g></svg>'
     )
 
 
-def membrete_documento(titulo):
-    st.markdown(
-        f'<div class="membrete"><span>Borrador · {html.escape(titulo)}</span>'
-        "<span>Revisa y edita antes de imprimir</span></div>",
-        unsafe_allow_html=True,
+def html_tinterillo_redactando():
+    """ANIMACIÓN 2: pluma estilográfica escribiendo sobre pergamino mientras la IA redacta el documento."""
+    return (
+        '<div class="escena">' + _svg_pluma() +
+        '<div class="mensaje-pluma">✒️ Tu Tinterillo Digital está redactando tu documento con rigor jurídico...</div></div>'
     )
 
 
-def contenedor_con_clase(clave):
-    """Contenedor con clase CSS propia (st-key-<clave>). En versiones antiguas sin `key`, usa uno normal."""
-    try:
-        return st.container(key=clave)
-    except TypeError:
-        return st.container()
+def insignias_html(analisis, mec_id, critico):
+    urgencia_clase = "critica" if critico else "marino"
+    plazo_clase = "critica" if mec_id == "TUTELA" else "dorada"
+    urgencia = _html.escape(f"Urgencia: {ETIQUETA_NIVEL[analisis['nivel']]}")
+    plazo = _html.escape(BADGE_PLAZO.get(mec_id, ""))
+    nombre = _html.escape(MECANISMOS[mec_id]["nombre"])
+    return (
+        '<div class="insignias">'
+        f'<span class="insignia {urgencia_clase}">{urgencia}</span>'
+        f'<span class="insignia {plazo_clase}">{plazo}</span>'
+        f'<span class="insignia">{nombre}</span>'
+        '</div>'
+    )
 
 
 # =============================================================================
@@ -1727,8 +1867,13 @@ def vista_relato():
         elif not relato_parece_valido(relato):
             st.error(MENSAJE_RELATO_INVALIDO)
         else:
-            with st.spinner("Analizando la gravedad de tu caso..."):
+            # ANIMACIÓN 1a: el mazo se balancea mientras dura el análisis (IA + reglas)
+            animacion = st.empty()
+            mostrar_html(html_juez_analizando(), animacion)
+            try:
                 analisis = analizar_caso(caso_id, relato.strip(), usar_ia)
+            finally:
+                animacion.empty()
             if not analisis.get("relato_valido", True):
                 st.warning("🤔 " + analisis["justificacion"])  # la IA explica qué corregir; el texto se queda como está
             else:
@@ -1772,15 +1917,20 @@ def vista_capsula():
     caso = CASOS[st.session_state["caso"]]
     analisis = st.session_state["analisis"]
     mec_id = st.session_state["mecanismo"]
+    critico = bool(analisis["riesgo_vital"] or analisis["nivel"] == "CRITICA")
 
     st.header("📚 Cápsula de Asesoría Legal")
     st.subheader(caso["titulo"])
-    insignia_urgencia(analisis["nivel"], tutela=(mec_id == "TUTELA"))
 
-    if analisis["riesgo_vital"] or analisis["nivel"] == "CRITICA":
-        tarjeta("urgente", "🚨 **Posible riesgo vital.** " + (analisis["alerta"] or ALERTA_VITAL), "Alerta de urgencia")
+    # ANIMACIÓN 1b: martillazo de impacto + sello del mecanismo elegido
+    mostrar_html(html_dictamen_listo(mec_id, critico))
 
-    tarjeta("concepto", texto_capsula(analisis, caso, mec_id), "Concepto jurídico")
+    # Dictamen jurídico: borde marino (normal) o borgoña (urgencia crítica)
+    with st.container(key="dictamen_critico" if critico else "dictamen_normal"):
+        mostrar_html('<div class="dictamen-cab">Dictamen jurídico</div>' + insignias_html(analisis, mec_id, critico))
+        if critico:
+            st.markdown(alerta_html("🚨 **Posible riesgo vital.** " + (analisis["alerta"] or ALERTA_VITAL)), unsafe_allow_html=True)
+        st.markdown(texto_capsula(analisis, caso, mec_id))
 
     # Transparencia sobre la fuente del análisis
     if analisis["fuente"] == "ia":
@@ -1918,8 +2068,13 @@ def vista_formulario():
             for e in errores:
                 st.error(e)  # los campos se quedan exactamente como el usuario los dejó
         else:
-            with st.spinner("Redactando tu documento..."):
+            # ANIMACIÓN 2: pluma escribiendo sobre pergamino mientras se redacta el documento
+            animacion = st.empty()
+            mostrar_html(html_tinterillo_redactando(), animacion)
+            try:
                 hechos_f, pret_f, estado = redactar_documento(mec_id, caso_id, datos)
+            finally:
+                animacion.empty()
             st.session_state["estado_redaccion"] = estado
             st.session_state["borrador"] = generar_borrador(
                 mec_id, caso_id, datos, hechos_f, pret_f, st.session_state["analisis"]
@@ -1944,7 +2099,7 @@ def vista_documento():
     st.caption(f"{mec['nombre']}  |  Urgencia: {ETIQUETA_NIVEL[analisis['nivel']]}")
 
     if analisis["riesgo_vital"] or analisis["nivel"] == "CRITICA":
-        tarjeta("urgente", "🚨 " + (analisis["alerta"] or ALERTA_VITAL), "Alerta de urgencia")
+        st.markdown(alerta_html("🚨 " + (analisis["alerta"] or ALERTA_VITAL)), unsafe_allow_html=True)
 
     if estado == "ia":
         st.success(
@@ -1962,9 +2117,8 @@ def vista_documento():
         st.warning(f"No fue posible usar la IA en este momento ({causa}). Se usó tu relato original y las pretensiones estándar: revisa y edita.")
         st.button("🔁 Reintentar con IA (reemplaza el texto actual)", key="reintentar_redaccion", on_click=reintentar_redaccion)
 
-    with contenedor_con_clase("hoja_papel"):  # presentación tipo hoja oficial (ver .st-key-hoja_papel en el CSS)
-        membrete_documento(mec["nombre"])
-        texto = st.text_area("Borrador del documento (editable)", key="borrador", height=560)
+    mostrar_html('<div class="hoja-cab">📄 Vista previa del documento · tamaño carta · editable</div>')
+    texto = st.text_area("Borrador del documento (editable)", key="borrador", height=560)
 
     if "[COMPLETAR" in texto:
         st.error("El documento aún tiene marcas [COMPLETAR: ...]. Reemplázalas con los datos reales antes de imprimir.")
@@ -1982,7 +2136,7 @@ def vista_documento():
     for i, item in enumerate(lista_chequeo(mec_id, caso_id)):
         st.checkbox(item, key=f"chk_{mec_id}_{caso_id}_{i}")
 
-    tarjeta("advertencia", f"**Si hay omisión o silencio:** {mec['omision']}.", "Advertencia legal")
+    st.warning(f"**Si hay omisión o silencio:** {mec['omision']}.")
 
     st.divider()
     col_a, col_b = st.columns(2)
@@ -1997,7 +2151,7 @@ def vista_documento():
 # =============================================================================
 def main():
     iniciar_estado()
-    aplicar_estilos()
+    inyectar_estilos()
 
     with st.sidebar:
         st.markdown("### ⚖️ Tinterillo Digital")
@@ -2027,7 +2181,6 @@ def main():
         "capsula": vista_capsula, "formulario": vista_formulario, "documento": vista_documento,
     }
     vistas[st.session_state["paso"]]()
-    pie_de_pagina()
 
 
 if __name__ == "__main__":
